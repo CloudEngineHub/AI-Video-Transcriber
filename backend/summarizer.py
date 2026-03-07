@@ -8,24 +8,33 @@ logger = logging.getLogger(__name__)
 class Summarizer:
     """文本总结器，使用OpenAI API生成多语言摘要"""
     
-    def __init__(self):
-        """初始化总结器"""
-        # 从环境变量获取OpenAI API配置
-        api_key = os.getenv("OPENAI_API_KEY")
-        base_url = os.getenv("OPENAI_BASE_URL")
-        
-        if not api_key:
+    def __init__(self, api_key: str = None, base_url: str = None, model: str = None):
+        """
+        初始化总结器。
+
+        优先级：参数 > 环境变量。
+        model 指定时会同时作为 fast_model 和 advanced_model 使用。
+        """
+        effective_key = api_key or os.getenv("OPENAI_API_KEY")
+        effective_url = base_url or os.getenv("OPENAI_BASE_URL")
+
+        if not effective_key:
             logger.warning("未设置OPENAI_API_KEY环境变量，将无法使用摘要功能")
-        
-        if api_key:
-            if base_url:
-                self.client = openai.OpenAI(api_key=api_key, base_url=base_url)
-                logger.info(f"OpenAI客户端已初始化，使用自定义端点: {base_url}")
+
+        if effective_key:
+            kwargs = {"api_key": effective_key}
+            if effective_url:
+                kwargs["base_url"] = effective_url
+                logger.info(f"OpenAI客户端已初始化，base_url={effective_url}")
             else:
-                self.client = openai.OpenAI(api_key=api_key)
                 logger.info("OpenAI客户端已初始化，使用默认端点")
+            self.client = openai.OpenAI(**kwargs)
         else:
             self.client = None
+
+        # 允许前端指定模型，覆盖硬编码的 gpt-3.5-turbo / gpt-4o
+        self.fast_model     = model or "gpt-3.5-turbo"
+        self.advanced_model = model or "gpt-4o"
         
         # 支持的语言映射
         self.language_map = {
@@ -163,7 +172,7 @@ class Summarizer:
 请特别注意修复因时间戳分割导致的句子不完整问题，并进行合理的段落划分！"""
 
         response = self.client.chat.completions.create(
-            model="gpt-3.5-turbo",
+            model=self.fast_model,
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt}
@@ -211,7 +220,7 @@ class Summarizer:
 
             try:
                 response = self.client.chat.completions.create(
-                    model="gpt-3.5-turbo",
+                    model=self.fast_model,
                     messages=[
                         {"role": "system", "content": system_prompt},
                         {"role": "user", "content": user_prompt}
@@ -299,7 +308,7 @@ class Summarizer:
 
         try:
             response = self.client.chat.completions.create(
-                model="gpt-3.5-turbo",
+                model=self.fast_model,
                 messages=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": prompt}
@@ -782,7 +791,7 @@ class Summarizer:
 重新分段后的文本："""
 
             response = self.client.chat.completions.create(
-                model="gpt-4o",
+                model=self.advanced_model,
                 messages=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_prompt}
@@ -861,7 +870,7 @@ Core requirements:
 {text}"""
 
         response = self.client.chat.completions.create(
-            model="gpt-4o",
+            model=self.advanced_model,
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt}
@@ -1034,7 +1043,7 @@ Requirements:
         
         # 调用OpenAI API
         response = self.client.chat.completions.create(
-            model="gpt-4o",
+            model=self.advanced_model,
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt}
@@ -1077,7 +1086,7 @@ Avoid using any subheadings or decorative separators, output content only."""
 
             try:
                 response = self.client.chat.completions.create(
-                    model="gpt-4o",
+                    model=self.advanced_model,
                     messages=[
                         {"role": "system", "content": system_prompt},
                         {"role": "user", "content": user_prompt}
@@ -1172,7 +1181,7 @@ Requirements:
 - Form a complete content summary"""
 
             response = self.client.chat.completions.create(
-                model="gpt-4o",
+                model=self.advanced_model,
                 messages=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_prompt}
@@ -1204,7 +1213,7 @@ Requirements:
 
         try:
             resp = self.client.chat.completions.create(
-                model="gpt-4o",
+                model=self.advanced_model,
                 messages=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_prompt},

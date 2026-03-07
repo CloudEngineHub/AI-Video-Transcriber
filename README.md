@@ -4,7 +4,7 @@
 
 English | [中文](README_ZH.md)
 
-An AI-powered video transcription and summarization tool that supports multiple video platforms including YouTube, Tiktok, Bilibili, and 30+ platforms.
+An AI-powered tool to transcribe and summarize videos and podcasts — supports YouTube, TikTok, Bilibili, Apple Podcasts, SoundCloud, and 30+ platforms.
 
 ![Interface](en-video.png)
 
@@ -12,12 +12,13 @@ An AI-powered video transcription and summarization tool that supports multiple 
 
 ## ✨ Features
 
-- 🎥 **Multi-Platform Support**: Works with YouTube, Tiktok, Bilibili, and 30+ more
-- 🗣️ **Intelligent Transcription**: High-accuracy speech-to-text using Faster-Whisper
+- 🎥 **Multi-Platform Support**: Works with YouTube, TikTok, Bilibili, Apple Podcasts, SoundCloud, and 30+ more
+- ⚡ **Subtitle-First Architecture**: For platforms with native subtitles (e.g. YouTube), transcripts are extracted instantly — no audio download needed. Whisper is only used as a fallback, making the whole pipeline dramatically faster.
+- 🗣️ **Intelligent Transcription**: High-accuracy speech-to-text using Faster-Whisper when subtitles aren't available
 - 🤖 **AI Text Optimization**: Automatic typo correction, sentence completion, and intelligent paragraphing
 - 🌍 **Multi-Language Summaries**: Generate intelligent summaries in multiple languages
-- ⚡ **Real-Time Progress**: Live progress tracking and status updates
-- ⚙️ **Conditional Translation**: When the selected summary language differs from the detected transcript language, the system auto-translates with GPT‑4o
+- 🔧 **Bring Your Own Model**: Configure any OpenAI-compatible API endpoint (OpenAI, OpenRouter, local LLM, etc.) directly in the UI — enter your API Base URL and API Key, then click **Fetch** to auto-discover all available models and select the one you want
+- ⚙️ **Conditional Translation**: Auto-translates the transcript when the summary language differs from the source language
 - 📱 **Mobile-Friendly**: Perfect support for mobile devices
 
 [![Star History Chart](https://api.star-history.com/svg?repos=wendy7756/AI-Video-Transcriber&type=Date)](https://star-history.com/#wendy7756/AI-Video-Transcriber&Date)
@@ -28,7 +29,7 @@ An AI-powered video transcription and summarization tool that supports multiple 
 
 - Python 3.8+
 - FFmpeg
-- Optional: OpenAI API key (for AI summary features)
+- An API key from any OpenAI-compatible provider (OpenAI, OpenRouter, etc.) — configured directly in the UI, no server-side env var needed
 
 ### Installation
 
@@ -53,12 +54,12 @@ cd AI-Video-Transcriber
 
 # Using Docker Compose (easiest)
 cp .env.example .env
-# Edit .env file and set your OPENAI_API_KEY
+# Edit .env file if you want server-side defaults (optional)
 docker-compose up -d
 
 # Or using Docker directly
 docker build -t ai-video-transcriber .
-docker run -p 8000:8000 -e OPENAI_API_KEY="your_api_key_here" ai-video-transcriber
+docker run -p 8000:8000 ai-video-transcriber
 ```
 
 #### Method 3: Manual Installation
@@ -84,13 +85,11 @@ sudo apt update && sudo apt install ffmpeg
 sudo yum install ffmpeg
 ```
 
-3. **Configure Environment Variables**
+3. **Configure Environment Variables** *(optional)*
 ```bash
-# Required for AI summary/translation features
+# If you prefer server-side defaults, set these — otherwise configure via the UI
 export OPENAI_API_KEY="your_api_key_here"
-
-# Optional: only if you use a custom OpenAI-compatible gateway
-export OPENAI_BASE_URL="https://oneapi.basevec.com/v1"
+export OPENAI_BASE_URL="https://openrouter.ai/api/v1"  # any OpenAI-compatible endpoint
 ```
 
 ### Start the Service
@@ -115,24 +114,25 @@ This keeps the SSE connection stable throughout long tasks (30–60+ min).
 
 ```bash
 source venv/bin/activate
-export OPENAI_API_KEY=your_api_key_here
-# export OPENAI_BASE_URL=https://oneapi.basevec.com/v1   # if using a custom endpoint
+export OPENAI_API_KEY=your_api_key_here         # optional: server-side default
+# export OPENAI_BASE_URL=https://openrouter.ai/api/v1  # optional: server-side default
 python3 start.py --prod
 ```
 
 ## 📖 Usage Guide
 
 1. **Enter Video URL**: Paste a video link from YouTube, Bilibili, or other supported platforms
-2. **Select Summary Language**: Choose the language for the generated summary
-3. **Start Processing**: Click the "Start" button
-4. **Monitor Progress**: Watch real-time progress through multiple stages:
-   - Video download and parsing
-   - Audio transcription with Faster-Whisper
-   - AI-powered transcript optimization (typo correction, sentence completion, intelligent paragraphing)
-   - AI summary generation in selected language
-5. **View Results**: Review the optimized transcript and intelligent summary
-   - If transcript language ≠ selected summary language, a third tab “Translation” is shown containing a translated transcript
-6. **Download Files**: Click download buttons to save Markdown-formatted files (Transcript / Translation / Summary)
+2. **Select Summary Language**: Choose the output language from the dropdown next to the input area
+3. **(Optional) Configure AI Model**: Click **AI Settings** to expand the panel
+   - Enter your **API Base URL** (e.g. `https://openrouter.ai/api/v1`) and **API Key**
+   - Click **Fetch** to auto-load all models from that provider
+   - Select the model you want — or leave blank to use the server default
+4. **Start Processing**: Click the **Transcribe** button. The progress bar shows which mode is active:
+   - **⚡ Subtitle** (green) — native subtitles found, transcript extracted in seconds
+   - **🎙 Whisper** (amber) — no subtitles available, downloading audio for transcription
+5. **View Results**: Review the optimized transcript and AI summary
+   - If transcript language ≠ selected summary language, a **Translation** tab appears automatically
+6. **Download Files**: Save Markdown-formatted files (Transcript / Translation / Summary)
 
 ## 🛠️ Technical Architecture
 
@@ -176,7 +176,7 @@ AI-Video-Transcriber/
 
 | Variable | Description | Default | Required |
 |----------|-------------|---------|----------|
-| `OPENAI_API_KEY` | OpenAI API key | - | Yes (for AI features) |
+| `OPENAI_API_KEY` | API key (server-side default) | - | No — can be set in UI instead |
 | `HOST` | Server address | `0.0.0.0` | No |
 | `PORT` | Server port | `8000` | No |
 | `WHISPER_MODEL_SIZE` | Whisper model size | `base` | No |
@@ -200,14 +200,13 @@ A: Transcription speed depends on video length, Whisper model size, and hardware
 A: All platforms supported by yt-dlp, including but not limited to: YouTube, TikTok, Facebook, Instagram, Twitter, Bilibili, Youku, iQiyi, Tencent Video, etc.
 
 ### Q: What if the AI optimization features are unavailable?
-A: Both transcript optimization and summary generation require an OpenAI API key. Without it, the system provides the raw transcript from Whisper and a simplified summary.
+A: AI features require an API key from any OpenAI-compatible provider (OpenAI, OpenRouter, etc.). You can enter it directly in the **AI Settings** panel in the UI — no server restart needed. Alternatively, set `OPENAI_API_KEY` as an environment variable for a server-side default.
 
 ### Q: I get HTTP 500 errors when starting/using the service. Why?
 A: In most cases this is an environment configuration issue rather than a code bug. Please check:
 - Ensure a virtualenv is activated: `source venv/bin/activate`
 - Install deps inside the venv: `pip install -r requirements.txt`
-- Set `OPENAI_API_KEY` (required for summary/translation)
-- If using a custom gateway, set `OPENAI_BASE_URL` correctly and ensure network access
+- Configure your API key in the **AI Settings** panel, or set `OPENAI_API_KEY` as an env var
 - Install FFmpeg: `brew install ffmpeg` (macOS) / `sudo apt install ffmpeg` (Debian/Ubuntu)
 - If port 8000 is occupied, stop the old process or change `PORT`
 
@@ -227,7 +226,7 @@ A: Docker provides the easiest deployment method:
 git clone https://github.com/wendy7756/AI-Video-Transcriber.git
 cd AI-Video-Transcriber
 cp .env.example .env
-# Edit .env file to set your OPENAI_API_KEY
+# Edit .env file to set server-side defaults (optional)
 
 # Start with Docker Compose (recommended)
 docker-compose up -d
@@ -241,7 +240,7 @@ docker run -p 8000:8000 --env-file .env ai-video-transcriber
 - **Port conflict**: Change port mapping `-p 8001:8000` if 8000 is occupied
 - **Permission denied**: Ensure Docker Desktop is running and you have proper permissions
 - **Build fails**: Check disk space (need ~2GB free) and network connection
-- **Container won't start**: Verify .env file exists and contains valid OPENAI_API_KEY
+- **Container won't start**: Check Docker logs with `docker logs <container_id>`
 
 **Docker Commands:**
 ```bash
@@ -309,8 +308,8 @@ A: If you encounter network-related errors during video downloading or API calls
 # Test video platform access
 curl -I https://www.youtube.com/
 
-# Test OpenAI API access (replace with your endpoint)
-curl -I https://api.openai.com
+# Test your AI provider endpoint
+curl -I https://openrouter.ai
 
 # Test Docker Hub access
 docker pull hello-world
@@ -344,11 +343,13 @@ docker pull hello-world
   - Ideal: 16GB RAM, multi-core CPU, SSD storage
 
 - **Processing Time Estimates**:
-  | Video Length | Estimated Time | Notes |
-  |-------------|----------------|-------|
-  | 1 minute | 30s-1 minute | Depends on network and hardware |
-  | 5 minutes | 2-5 minutes | Recommended for first-time testing |
-  | 15 minutes | 5-15 minutes | Suitable for regular use |
+
+  | Video Length | Subtitle Mode | Whisper Mode | Notes |
+  |-------------|---------------|--------------|-------|
+  | 1 minute | ~5s | 30s–1 min | Subtitle mode needs no audio download |
+  | 5 minutes | ~10s | 2–5 min | YouTube auto-captions trigger subtitle mode |
+  | 15 minutes | ~15s | 5–15 min | Most YouTube videos support subtitle mode |
+  | 30+ minutes | ~20s | 15–60 min | Podcast/audio-only always uses Whisper |
 
 ## 🤝 Contributing
 
@@ -371,6 +372,23 @@ We welcome Issues and Pull Requests!
 ## 📞 Contact
 
 For questions or suggestions, please submit an Issue or contact Wendy.
+
+---
+
+## 🚀 Try the Full Product — sipsip.ai
+
+This tool is the open-source part of **[sipsip.ai](https://sipsip.ai)**.
+
+The full product goes further:
+- 📧 **Daily email briefs** — follow your favorite creators and get an AI-curated digest in your inbox every morning
+- ⚡ Transcribe & summarize any video or podcast on demand
+- 🌐 Multi-language support across all features
+
+**Free to start** — no credit card required.
+
+➡️ [sipsip.ai](https://sipsip.ai)
+
+---
 
 ## ⭐ Star History
 

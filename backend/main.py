@@ -12,6 +12,7 @@ import aiofiles
 import uuid
 import json
 import re
+import openai
 
 from video_processor import VideoProcessor
 from transcriber import Transcriber
@@ -121,10 +122,36 @@ async def read_root():
     """返回前端页面"""
     return FileResponse(str(PROJECT_ROOT / "static" / "index.html"))
 
+@app.post("/api/models")
+async def list_models(
+    base_url: str = Form(default=""),
+    api_key:  str = Form(default=""),
+):
+    """Proxy: fetch model list from any OpenAI-compatible API."""
+    effective_key = api_key or os.getenv("OPENAI_API_KEY", "")
+    effective_url = base_url.rstrip("/") or os.getenv("OPENAI_BASE_URL") or None
+
+    if not effective_key:
+        raise HTTPException(status_code=400, detail="API key is required")
+
+    try:
+        client = openai.OpenAI(api_key=effective_key, base_url=effective_url)
+        resp   = await asyncio.to_thread(client.models.list)
+        models = [{"id": m.id, "name": getattr(m, "name", m.id)} for m in resp.data]
+        # Sort by id for readability
+        models.sort(key=lambda x: x["id"])
+        return {"data": models}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
 @app.post("/api/process-video")
 async def process_video(
     url: str = Form(...),
-    summary_language: str = Form(default="zh")
+    summary_language: str = Form(default="zh"),
+    api_key:       str = Form(default=""),
+    model_base_url: str = Form(default=""),
+    model_id:      str = Form(default=""),
 ):
     """
     处理视频链接，返回任务ID
@@ -156,7 +183,7 @@ async def process_video(
         save_tasks(tasks)
         
         # 创建并跟踪异步任务
-        task = asyncio.create_task(process_video_task(task_id, url, summary_language))
+        task = asyncio.create_task(process_video_task(task_id, url, summary_language, api_key, model_base_url, model_id))
         active_tasks[task_id] = task
         
         return {"task_id": task_id, "message": "任务已创建，正在处理中..."}
@@ -165,53 +192,81 @@ async def process_video(
         logger.error(f"处理视频时出错: {str(e)}")
         raise HTTPException(status_code=500, detail=f"处理失败: {str(e)}")
 
-async def process_video_task(task_id: str, url: str, summary_language: str):
+async def process_video_task(
+    task_id: str,
+    url: str,
+    summary_language: str,
+    api_key: str = "",
+    model_base_url: str = "",
+    model_id: str = "",
+):
     """
     异步处理视频任务
     """
     try:
-        # 立即更新状态：开始下载视频
+        # ── 阶段一：优先尝试获取平台字幕（快速路径） ──────────────────────
         tasks[task_id].update({
             "status": "processing",
             "progress": 10,
-            "message": "正在下载视频..."
+            "message": "正在检测视频字幕..."
         })
         save_tasks(tasks)
         await broadcast_task_update(task_id, tasks[task_id])
-        
-        # 添加短暂延迟确保状态更新
-        import asyncio
         await asyncio.sleep(0.1)
-        
-        # 更新状态：正在解析视频信息
-        tasks[task_id].update({
-            "progress": 15,
-            "message": "正在解析视频信息..."
-        })
-        save_tasks(tasks)
-        await broadcast_task_update(task_id, tasks[task_id])
-        
-        # 下载并转换视频
-        audio_path, video_title = await video_processor.download_and_convert(url, TEMP_DIR)
-        
-        # 下载完成，更新状态
-        tasks[task_id].update({
-            "progress": 35,
-            "message": "视频下载完成，准备转录..."
-        })
-        save_tasks(tasks)
-        await broadcast_task_update(task_id, tasks[task_id])
-        
-        # 更新状态：转录中
-        tasks[task_id].update({
-            "progress": 40,
-            "message": "正在转录音频..."
-        })
-        save_tasks(tasks)
-        await broadcast_task_update(task_id, tasks[task_id])
-        
-        # 转录音频
-        raw_script = await transcriber.transcribe(audio_path)
+
+        # 如果前端传入了 API 凭据，创建专用 Summarizer（线程安全，覆盖全局实例）
+        if api_key:
+            effective_url = model_base_url.rstrip("/") or None
+            request_summarizer = Summarizer(
+                api_key=api_key,
+                base_url=effective_url,
+                model=model_id or None,
+            )
+            logger.info(f"使用前端提供的 API Key，base_url={effective_url}, model={model_id or 'default'}")
+        else:
+            request_summarizer = summarizer  # 全局实例（使用环境变量）
+
+        subtitle_text, sub_title, sub_lang = await video_processor.fetch_subtitles(url, TEMP_DIR)
+
+        if subtitle_text:
+            # ── 快速路径：有字幕，跳过音频下载和 Whisper ──────────────────
+            video_title = sub_title
+            raw_script = subtitle_text
+            # 把语言写入 transcriber，保持下游逻辑一致
+            transcriber.last_detected_language = sub_lang
+
+            tasks[task_id].update({
+                "progress": 40,
+                "message": f"字幕获取成功（{sub_lang}），正在处理文本..."
+            })
+            save_tasks(tasks)
+            await broadcast_task_update(task_id, tasks[task_id])
+        else:
+            # ── 慢速路径：无字幕，下载音频 → Whisper 转录 ─────────────────
+            tasks[task_id].update({
+                "progress": 15,
+                "message": "未找到字幕，正在下载视频音频..."
+            })
+            save_tasks(tasks)
+            await broadcast_task_update(task_id, tasks[task_id])
+
+            audio_path, video_title = await video_processor.download_and_convert(url, TEMP_DIR)
+
+            tasks[task_id].update({
+                "progress": 35,
+                "message": "音频下载完成，准备转录..."
+            })
+            save_tasks(tasks)
+            await broadcast_task_update(task_id, tasks[task_id])
+
+            tasks[task_id].update({
+                "progress": 40,
+                "message": "正在转录音频（Whisper）..."
+            })
+            save_tasks(tasks)
+            await broadcast_task_update(task_id, tasks[task_id])
+
+            raw_script = await transcriber.transcribe(audio_path)
 
         # 将Whisper原始转录保存为Markdown文件，供下载/归档
         try:
@@ -241,7 +296,7 @@ async def process_video_task(task_id: str, url: str, summary_language: str):
         await broadcast_task_update(task_id, tasks[task_id])
         
         # 优化转录文本：修正错别字，按含义分段
-        script = await summarizer.optimize_transcript(raw_script)
+        script = await request_summarizer.optimize_transcript(raw_script)
         
         # 为转录文本添加标题，并在结尾添加来源链接
         script_with_title = f"# {video_title}\n\n{script}\n\nsource: {url}\n"
@@ -285,7 +340,7 @@ async def process_video_task(task_id: str, url: str, summary_language: str):
         await broadcast_task_update(task_id, tasks[task_id])
         
         # 生成摘要
-        summary = await summarizer.summarize(script, summary_language, video_title)
+        summary = await request_summarizer.summarize(script, summary_language, video_title)
         summary_with_source = summary + f"\n\nsource: {url}\n"
         
         # 保存优化后的转录文本到文件
