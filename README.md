@@ -4,15 +4,16 @@
 
 English | [中文](README_ZH.md)
 
-An AI-powered tool to transcribe and summarize videos and podcasts — supports YouTube, TikTok, Bilibili, Apple Podcasts, SoundCloud, and 30+ platforms.
+An AI-powered tool to transcribe and summarize videos and podcasts — paste a URL from YouTube, TikTok, Bilibili, Apple Podcasts, SoundCloud, and 30+ platforms, **or upload a local file** (audio, video, or plain text).
 
-![Interface](en-video.png)
+![Interface](en_video.png)
 
 </div>
 
 ## ✨ Features
 
 - 🎥 **Multi-Platform Support**: Works with YouTube, TikTok, Bilibili, Apple Podcasts, SoundCloud, and 30+ more
+- 📁 **Local File Upload**: Drag-and-drop or pick a file — supported formats include `.txt` (treated as transcript text), `.mp3`, `.mp4`, `.m4a`, `.wav`, `.webm`, `.mkv`, `.ogg`, `.flac`. Media is normalized with FFmpeg for Whisper; the same optimize → translate → summarize pipeline runs as for URLs
 - ⚡ **Subtitle-First Architecture**: For platforms with native subtitles (e.g. YouTube), transcripts are extracted instantly — no audio download needed. Whisper is only used as a fallback, making the whole pipeline dramatically faster.
 - 🗣️ **Intelligent Transcription**: High-accuracy speech-to-text using Faster-Whisper when subtitles aren't available
 - 🤖 **AI Text Optimization**: Automatic typo correction, sentence completion, and intelligent paragraphing
@@ -28,7 +29,7 @@ An AI-powered tool to transcribe and summarize videos and podcasts — supports 
 ### Prerequisites
 
 - Python 3.8+
-- FFmpeg
+- FFmpeg (required for yt-dlp audio extraction and for normalizing uploaded media)
 - An API key from any OpenAI-compatible provider (OpenAI, OpenRouter, etc.) — configured directly in the UI, no server-side env var needed
 
 ### Installation
@@ -59,8 +60,10 @@ docker-compose up -d
 
 # Or using Docker directly
 docker build -t ai-video-transcriber .
-docker run -p 8000:8000 ai-video-transcriber
+docker run -p 8000:8000 --env-file .env ai-video-transcriber
 ```
+
+The image uses **Python 3.12** (Debian Bookworm), upgrades `pip`/`setuptools`/`wheel`, then installs from `requirements.txt` — same version constraints as a fresh local venv on a current Python.
 
 #### Method 3: Manual Installation
 
@@ -121,15 +124,18 @@ python3 start.py --prod
 
 ## 📖 Usage Guide
 
-1. **Enter Video URL**: Paste a video link from YouTube, Bilibili, or other supported platforms
+1. **Choose input — URL or file**
+   - **Video / podcast URL**: Paste a link from YouTube, Bilibili, or any other supported platform into the input field
+   - **Local file**: Drag a file onto the dashed upload area (or click to browse). Same **Transcribe** button starts the job; uploads use the same API route as URLs (`POST /api/process-video` with multipart `file`), which helps when a reverse proxy only allows that path
 2. **Select Summary Language**: Choose the output language from the dropdown next to the input area
 3. **(Optional) Configure AI Model**: Click **AI Settings** to expand the panel
    - Enter your **API Base URL** (e.g. `https://openrouter.ai/api/v1`) and **API Key**
    - Click **Fetch** to auto-load all models from that provider
    - Select the model you want — or leave blank to use the server default
-4. **Start Processing**: Click the **Transcribe** button. The progress bar shows which mode is active:
+4. **Start Processing**: Click the **Transcribe** button. For **URL** jobs, the progress bar shows which mode is active:
    - **⚡ Subtitle** (green) — native subtitles found, transcript extracted in seconds
    - **🎙 Whisper** (amber) — no subtitles available, downloading audio for transcription
+   For **local uploads**, media is normalized with FFmpeg then transcribed with Whisper; plain **`.txt`** files skip download/Whisper and go straight into the text pipeline (optimize → summary, and translation when languages differ).
 5. **View Results**: Review the optimized transcript and AI summary
    - If transcript language ≠ selected summary language, a **Translation** tab appears automatically
 6. **Download Files**: Save Markdown-formatted files (Transcript / Translation / Summary)
@@ -139,6 +145,7 @@ python3 start.py --prod
 ### Backend Stack
 - **FastAPI**: Modern Python web framework
 - **yt-dlp**: Video downloading and processing
+- **FFmpeg**: Audio extraction and local upload normalization (mono 16 kHz for Whisper)
 - **Faster-Whisper**: Efficient speech transcription
 - **OpenAI API**: Intelligent text summarization
 
@@ -156,7 +163,8 @@ AI-Video-Transcriber/
 │   ├── video_processor.py  # Video processing module
 │   ├── transcriber.py      # Transcription module
 │   ├── summarizer.py       # Summary module
-│   └── translator.py       # Translation module
+│   ├── translator.py       # Translation module
+│   └── llm_sanitize.py     # Post-process LLM outputs (strip boilerplate)
 ├── static/                 # Frontend files
 │   ├── index.html          # Main page
 │   └── app.js              # Frontend logic
@@ -180,6 +188,9 @@ AI-Video-Transcriber/
 | `HOST` | Server address | `0.0.0.0` | No |
 | `PORT` | Server port | `8000` | No |
 | `WHISPER_MODEL_SIZE` | Whisper model size | `base` | No |
+| `UPLOAD_MAX_MB` | Maximum upload size for local files (MB) | `200` | No |
+
+An optional dedicated endpoint `POST /api/process-upload` exists with the same behavior as sending `file` to `/api/process-video`.
 
 ### Whisper Model Size Options
 
@@ -198,6 +209,9 @@ A: Transcription speed depends on video length, Whisper model size, and hardware
 
 ### Q: Which video platforms are supported?
 A: All platforms supported by yt-dlp, including but not limited to: YouTube, TikTok, Facebook, Instagram, Twitter, Bilibili, Youku, iQiyi, Tencent Video, etc.
+
+### Q: What local file types and size limits apply?
+A: Allowed extensions include `.txt`, `.mp3`, `.mp4`, `.m4a`, `.wav`, `.webm`, `.mkv`, `.ogg`, `.flac`. Default max size is **200 MB** per file; override with the `UPLOAD_MAX_MB` environment variable on the server.
 
 ### Q: What if the AI optimization features are unavailable?
 A: AI features require an API key from any OpenAI-compatible provider (OpenAI, OpenRouter, etc.). You can enter it directly in the **AI Settings** panel in the UI — no server restart needed. Alternatively, set `OPENAI_API_KEY` as an environment variable for a server-side default.

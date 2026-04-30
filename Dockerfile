@@ -1,20 +1,21 @@
-# AI视频转录器 Docker镜像 - 使用标准镜像确保兼容性
-FROM python:3.9-slim
+# AI视频转录器 Docker镜像 — Python 与本地推荐环境对齐（3.12），依赖与 requirements.txt 一致
+FROM python:3.12-slim-bookworm
 
-# 设置工作目录
 WORKDIR /app
 
-# 安装系统依赖
+# 系统依赖（FFmpeg：链接下载与本地上传转码）
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
     curl \
+    ca-certificates \
     gcc \
     g++ \
     && rm -rf /var/lib/apt/lists/*
 
-# 复制requirements.txt并安装Python依赖
+# 先升级 pip，再按 requirements 安装（与本地 `pip install -r requirements.txt` 行为一致，取满足下界的最新版）
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN python -m pip install --upgrade pip setuptools wheel \
+    && pip install --no-cache-dir -r requirements.txt
 
 # 复制项目文件
 COPY . .
@@ -26,6 +27,7 @@ RUN mkdir -p temp
 ENV HOST=0.0.0.0
 ENV PORT=8000
 ENV WHISPER_MODEL_SIZE=base
+ENV UPLOAD_MAX_MB=200
 
 # 暴露端口
 EXPOSE 8000
