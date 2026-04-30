@@ -3,6 +3,8 @@ import openai
 import logging
 from typing import Optional
 
+from llm_sanitize import strip_llm_artifacts
+
 logger = logging.getLogger(__name__)
 
 class Summarizer:
@@ -181,7 +183,7 @@ class Summarizer:
             temperature=0.1
         )
         
-        return response.choices[0].message.content
+        return strip_llm_artifacts(response.choices[0].message.content or "")
 
     async def _optimize_with_chunks(self, raw_transcript: str, max_tokens: int) -> str:
         """
@@ -229,7 +231,7 @@ class Summarizer:
                     temperature=0.1
                 )
                 
-                optimized_chunk = response.choices[0].message.content
+                optimized_chunk = strip_llm_artifacts(response.choices[0].message.content or "")
                 optimized_chunks.append(optimized_chunk)
                 
             except Exception as e:
@@ -316,7 +318,7 @@ class Summarizer:
                 max_tokens=4000,  # 对齐JS：优化/格式化阶段最大tokens≈4000
                 temperature=0.1
             )
-            optimized_text = response.choices[0].message.content or ""
+            optimized_text = strip_llm_artifacts(response.choices[0].message.content or "")
             # 移除诸如 "# Transcript" / "## Transcript" 等标题
             optimized_text = self._remove_transcript_heading(optimized_text)
             enforced = self._enforce_paragraph_max_chars(optimized_text.strip(), max_chars=400)
@@ -800,7 +802,7 @@ class Summarizer:
                 temperature=0.05  # 降低温度，提高一致性
             )
             
-            organized_text = response.choices[0].message.content
+            organized_text = strip_llm_artifacts(response.choices[0].message.content or "")
             
             # 工程验证：检查段落长度
             validated_text = self._validate_paragraph_lengths(organized_text)
@@ -879,7 +881,7 @@ Core requirements:
             temperature=0.05
         )
         
-        return response.choices[0].message.content
+        return strip_llm_artifacts(response.choices[0].message.content or "")
 
     def _validate_paragraph_lengths(self, text: str) -> str:
         """
@@ -1007,37 +1009,19 @@ Core requirements:
         language_name = self.language_map.get(target_language, "中文（简体）")
         
         # 构建英文提示词，适用于所有目标语言
-        system_prompt = f"""You are a professional content analyst. Please generate a comprehensive, well-structured summary in {language_name} for the following text.
+        system_prompt = f"""You are an expert editor. Write a concise EXECUTIVE SUMMARY in {language_name} of the following material.
 
-Summary Requirements:
-1. Extract the main topics and core viewpoints from the text
-2. Maintain clear logical structure, highlighting the core arguments
-3. Include important discussions, viewpoints, and conclusions
-4. Use concise and clear language
-5. Appropriately preserve the speaker's expression style and key opinions
+Hard rules:
+- Length: about 180–450 words in {language_name} (use the lower end if the source is short). Never reproduce long verbatim quotes or extended sentence-by-sentence rewrites of the transcript.
+- Content: main thesis, 3–7 key takeaways, important conclusions, and critical facts or numbers only. Tight prose; short bullet lists are OK for takeaways.
+- Do NOT restate the full transcript, do NOT add preamble ("Here is…"), and do NOT add closings such as offers to revise or "let me know if…" / 客套尾注.
+- Markdown: optional `## Key takeaways` then paragraphs; avoid decorative filler headings.
 
-Paragraph Organization Requirements (Core):
-1. **Organize by semantic and logical themes** - Start a new paragraph whenever the topic shifts, discussion focus changes, or when transitioning from one viewpoint to another
-2. **Each paragraph should focus on one main point or theme**
-3. **Paragraphs must be separated by blank lines (double line breaks \\n\\n)**
-4. **Consider the logical flow of content and reasonably divide paragraph boundaries**
+Output ONLY the summary body in {language_name}."""
 
-Format Requirements:
-1. Use Markdown format with double line breaks between paragraphs
-2. Each paragraph should be a complete logical unit
-3. Write entirely in {language_name}
-4. Aim for substantial content (600-1200 words when appropriate)"""
+        user_prompt = f"""Summarize the following content in {language_name}. Follow the system rules strictly (brief executive summary, no meta-commentary):
 
-        user_prompt = f"""Based on the following content, write a comprehensive, well-structured summary in {language_name}:
-
-{transcript}
-
-Requirements:
-- Focus on natural paragraphs, avoiding decorative headings
-- Cover all key ideas and arguments, preserving important examples and data
-- Ensure balanced coverage of both early and later content
-- Use restrained but comprehensive language
-- Organize content logically with proper paragraph breaks"""
+{transcript}"""
 
         logger.info(f"正在生成{language_name}摘要...")
         
@@ -1048,11 +1032,11 @@ Requirements:
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt}
             ],
-            max_tokens=3500,  # 控制在安全范围内，避免超出模型限制
-            temperature=0.3
+            max_tokens=2200,
+            temperature=0.25
         )
         
-        summary = response.choices[0].message.content
+        summary = strip_llm_artifacts(response.choices[0].message.content or "")
 
         return self._format_summary_with_meta(summary, target_language, video_title)
 
@@ -1072,17 +1056,20 @@ Requirements:
         for i, chunk in enumerate(chunks):
             logger.info(f"正在摘要第 {i+1}/{len(chunks)} 块...")
             
-            system_prompt = f"""You are a summarization expert. Please write a high-density summary for this text chunk in {language_name}.
+            system_prompt = f"""You are a summarization expert. Write a brief section summary in {language_name}.
 
-This is part {i+1} of {len(chunks)} of the complete content (Part {i+1}/{len(chunks)}).
+This is part {i+1} of {len(chunks)} of the full transcript.
 
-Output preferences: Focus on natural paragraphs, use minimal bullet points if necessary; highlight new information and its relationship to the main narrative; avoid vague repetition and formatted headings; moderate length (suggested 120-220 words)."""
+Rules:
+- About 80–160 words in {language_name}; bullets OK for key points.
+- Do not echo the transcript verbatim; capture only new information in this segment.
+- No preamble or meta-closings."""
 
-            user_prompt = f"""[Part {i+1}/{len(chunks)}] Summarize the key points of the following text in {language_name} (natural paragraphs preferred, minimal bullet points, 120-220 words):
+            user_prompt = f"""[Part {i+1}/{len(chunks)}] Summarize in {language_name} (80–160 words, tight prose):
 
 {chunk}
 
-Avoid using any subheadings or decorative separators, output content only."""
+Output content only, no headings like "Summary:"."""
 
             try:
                 response = self.client.chat.completions.create(
@@ -1091,11 +1078,11 @@ Avoid using any subheadings or decorative separators, output content only."""
                         {"role": "system", "content": system_prompt},
                         {"role": "user", "content": user_prompt}
                     ],
-                    max_tokens=1000,  # 提升分块摘要容量以涵盖更多细节
-                    temperature=0.3
+                    max_tokens=600,
+                    temperature=0.25
                 )
                 
-                chunk_summary = response.choices[0].message.content
+                chunk_summary = strip_llm_artifacts(response.choices[0].message.content or "")
                 chunk_summaries.append(chunk_summary)
                 
             except Exception as e:
@@ -1150,6 +1137,15 @@ Avoid using any subheadings or decorative separators, output content only."""
                     final_chunks.append(scur.strip())
         return final_chunks
 
+    async def _integrate_hierarchical_summaries(
+        self, chunk_summaries: list, target_language: str
+    ) -> str:
+        """Many partial summaries: fold through the same integrator as the <=10 case."""
+        combined = "\n\n".join(
+            f"[Part {idx + 1}]\n{s}" for idx, s in enumerate(chunk_summaries)
+        )
+        return await self._integrate_chunk_summaries(combined, target_language)
+
     async def _integrate_chunk_summaries(self, combined_summaries: str, target_language: str) -> str:
         """
         整合分块摘要为最终连贯摘要
@@ -1157,28 +1153,16 @@ Avoid using any subheadings or decorative separators, output content only."""
         language_name = self.language_map.get(target_language, "中文（简体）")
         
         try:
-            system_prompt = f"""You are a content integration expert. Please integrate multiple segmented summaries into a complete, coherent summary in {language_name}.
+            system_prompt = f"""You integrate partial summaries into ONE concise executive summary in {language_name}.
 
-Integration Requirements:
-1. Remove duplicate content and maintain clear logic
-2. Reorganize content by themes or chronological order
-3. Each paragraph must be separated by double line breaks
-4. Ensure output is in Markdown format with double line breaks between paragraphs
-5. Use concise and clear language
-6. Form a complete content summary
-7. Cover all parts comprehensively without omission"""
+Rules:
+- Total length about 280–650 words in {language_name}; remove duplication, do not expand into a transcript-length rewrite.
+- Markdown: paragraphs separated by blank lines; optional `## Key takeaways` only if it adds clarity.
+- No preamble, no meta-closings (e.g. offers to revise or "let me know")."""
 
-            user_prompt = f"""Please integrate the following segmented summaries into a complete, coherent summary in {language_name}:
+            user_prompt = f"""Merge the following partial summaries into one executive summary in {language_name}:
 
-{combined_summaries}
-
-Requirements:
-- Remove duplicate content and maintain clear logic
-- Reorganize content by themes or chronological order
-- Each paragraph must be separated by double line breaks
-- Ensure output is in Markdown format with double line breaks between paragraphs
-- Use concise and clear language
-- Form a complete content summary"""
+{combined_summaries}"""
 
             response = self.client.chat.completions.create(
                 model=self.advanced_model,
@@ -1186,12 +1170,11 @@ Requirements:
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_prompt}
                 ],
-                max_tokens=2500,  # 控制输出规模，兼顾上下文安全
-                temperature=0.3
+                max_tokens=2200,
+                temperature=0.25
             )
-            
-            return response.choices[0].message.content
-            
+
+            return strip_llm_artifacts(response.choices[0].message.content or "")
         except Exception as e:
             logger.error(f"整合摘要失败: {e}")
             # 失败时直接合并
@@ -1211,20 +1194,6 @@ Requirements:
             prefix = ""
         return prefix + summary
 
-        try:
-            resp = self.client.chat.completions.create(
-                model=self.advanced_model,
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt},
-                ],
-                max_tokens=1200,
-                temperature=0.2,
-            )
-            return resp.choices[0].message.content
-        except Exception:
-            return text
-    
     def _generate_fallback_summary(self, transcript: str, target_language: str, video_title: str = None) -> str:
         """
         生成备用摘要（当OpenAI API不可用时）

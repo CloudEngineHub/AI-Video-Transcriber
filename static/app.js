@@ -38,8 +38,8 @@ class VideoTranscriber {
         download_transcript:     'Transcript',
         download_translation:    'Translation',
         download_summary:        'Summary',
-        empty_hint:              'Paste a video URL above and let AI do the heavy lifting.',
-        footer_text:             'This tool is part of <a href="https://sipsip.ai" target="_blank" style="color:var(--accent-text);text-decoration:none;">sipsip.ai</a> — transcribe any video, and get daily AI briefs from your favorite creators delivered to your inbox. Free to start.',
+        empty_hint:              'Paste a video URL or drop a file above and let AI do the heavy lifting.',
+        footer_text:             'This tool is part of <a href="https://sipsip.ai" target="_blank" style="color:var(--accent-text);text-decoration:none;">sipsip.ai</a> — distill any content, and get daily AI briefs from your favorite creators delivered to your inbox. Free to start.',
         processing:              'Processing…',
         downloading_video:       'Downloading audio…',
         parsing_video:           'Parsing video info…',
@@ -59,6 +59,12 @@ class VideoTranscriber {
         fetching_models:         'Fetching models…',
         models_loaded:           (n) => `${n} models loaded`,
         models_error:            'Failed to fetch models',
+        upload_or:               'or drop your files',
+        upload_formats:          '.mp3 · .mp4 · .wav · .m4a · .webm · .mkv · .ogg · .flac',
+        upload_files_btn:        'Upload files',
+        error_upload_type:       'Unsupported file type',
+        error_upload_empty:      'File is empty',
+        error_upload_size:       (mb) => `File exceeds ${mb} MB limit`,
       },
       zh: {
         title:                   'AI 视频转录器',
@@ -103,6 +109,12 @@ class VideoTranscriber {
         fetching_models:         '正在获取模型列表…',
         models_loaded:           (n) => `已加载 ${n} 个模型`,
         models_error:            '获取模型失败',
+        upload_or:               '或拖放文件到此处',
+        upload_formats:          '.mp3 · .mp4 · .wav · .m4a · .webm · .mkv · .ogg · .flac',
+        upload_files_btn:        '上传文件',
+        error_upload_type:       '不支持的文件类型',
+        error_upload_empty:      '文件为空',
+        error_upload_size:       (mb) => `文件超过 ${mb} MB 限制`,
       }
     };
 
@@ -147,6 +159,11 @@ class VideoTranscriber {
     this.fetchStatus        = document.getElementById('fetchStatus');
     this.modelSelect        = document.getElementById('modelSelect');
     this.fetchIcon          = document.getElementById('fetchIcon');
+    this.uploadZone         = document.getElementById('uploadZone');
+    this.uploadPickBtn      = document.getElementById('uploadPickBtn');
+    this.fileInput          = document.getElementById('fileInput');
+    this.uploadMaxMb        = 200;
+    this._allowedUploadExts = new Set(['.txt', '.mp3', '.mp4', '.m4a', '.wav', '.webm', '.mkv', '.ogg', '.flac']);
   }
 
   /* ── Events ───────────────────────────────────────────── */
@@ -187,6 +204,42 @@ class VideoTranscriber {
     this.dlScript.addEventListener('click',      () => this._downloadFile('script'));
     this.dlTranslation.addEventListener('click', () => this._downloadFile('translation'));
     this.dlSummary.addEventListener('click',     () => this._downloadFile('summary'));
+
+    if (this.uploadPickBtn && this.fileInput && this.uploadZone) {
+      this.uploadPickBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.fileInput.click();
+      });
+      this.uploadZone.addEventListener('click', (e) => {
+        if (e.target === this.uploadPickBtn || this.uploadPickBtn.contains(e.target)) return;
+        this.fileInput.click();
+      });
+      this.fileInput.addEventListener('change', () => {
+        const f = this.fileInput.files && this.fileInput.files[0];
+        this.fileInput.value = '';
+        if (f) this._startFileUpload(f);
+      });
+      ['dragenter', 'dragover'].forEach((ev) => {
+        this.uploadZone.addEventListener(ev, (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          this.uploadZone.classList.add('dragover');
+        });
+      });
+      this.uploadZone.addEventListener('dragleave', (e) => {
+        e.preventDefault();
+        if (!this.uploadZone.contains(e.relatedTarget)) {
+          this.uploadZone.classList.remove('dragover');
+        }
+      });
+      this.uploadZone.addEventListener('drop', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        this.uploadZone.classList.remove('dragover');
+        const f = e.dataTransfer.files && e.dataTransfer.files[0];
+        if (f) this._startFileUpload(f);
+      });
+    }
   }
 
   /* ── i18n ─────────────────────────────────────────────── */
@@ -352,6 +405,68 @@ class VideoTranscriber {
     }
   }
 
+  async _startFileUpload(file) {
+    if (this.submitBtn.disabled) return;
+
+    const parts = (file.name || '').split('.');
+    const ext = parts.length > 1 ? ('.' + parts.pop().toLowerCase()) : '';
+    if (!this._allowedUploadExts.has(ext)) {
+      this._showError(this.t('error_upload_type'));
+      return;
+    }
+    if (!file.size) {
+      this._showError(this.t('error_upload_empty'));
+      return;
+    }
+    const maxB = this.uploadMaxMb * 1024 * 1024;
+    if (file.size > maxB) {
+      this._showError(this.t('error_upload_size')(this.uploadMaxMb));
+      return;
+    }
+
+    this._setLoading(true);
+    this._hideError();
+    this._showProgress();
+
+    const sumLang = this.summaryLangSel.value;
+    try {
+      const fd = new FormData();
+      fd.append('file', file, file.name);
+      fd.append('summary_language', sumLang);
+
+      const apiKey  = this.apiKeyInput.value.trim();
+      const baseUrl = this.modelBaseUrl.value.trim().replace(/\/$/, '');
+      const modelId = this.modelSelect.value;
+      if (apiKey)  fd.append('api_key',       apiKey);
+      if (baseUrl) fd.append('model_base_url', baseUrl);
+      if (modelId) fd.append('model_id',       modelId);
+
+      const resp = await fetch(`${this.apiBase}/process-video`, { method: 'POST', body: fd });
+      if (!resp.ok) {
+        const err = await resp.json().catch(() => ({}));
+        const d = err.detail;
+        const msg = typeof d === 'string'
+          ? d
+          : (Array.isArray(d) && d[0] && (d[0].msg || d[0].message))
+            || `HTTP ${resp.status}`;
+        throw new Error(msg);
+      }
+
+      const data = await resp.json();
+      this.currentTaskId = data.task_id;
+
+      this._initSP();
+      this._updateProgress(5, this.t('preparing'), true);
+      this._startSSE();
+      this._saveSettings();
+
+    } catch (err) {
+      this._showError(this.t('error_processing_failed') + err.message);
+      this._setLoading(false);
+      this._hideProgress();
+    }
+  }
+
   /* ── SSE ──────────────────────────────────────────────── */
   _startSSE() {
     if (!this.currentTaskId) return;
@@ -426,6 +541,20 @@ class VideoTranscriber {
       this.sp.stage = 'downloading';
       this.sp.target = 55;
       this._setModeBadge('whisper');
+    }
+    else if (m.includes('读取文本') || (m.includes('read') && m.includes('text'))) {
+      this.sp.stage = 'parsing';
+      this.sp.target = 55;
+      this._setModeBadge('whisper');
+    }
+    else if (m.includes('转换音频') || m.includes('准备转录')) {
+      this.sp.stage = 'downloading';
+      this.sp.target = 55;
+      this._setModeBadge('whisper');
+    }
+    else if (m.includes('上传') || m.includes('upload')) {
+      this.sp.stage = 'preparing';
+      this.sp.target = 40;
     }
     // ── 通用字幕检测中 ─────────────────────────────────────────
     else if (m.includes('检测') && (m.includes('字幕') || m.includes('subtitle'))) {
@@ -533,11 +662,22 @@ class VideoTranscriber {
   _hideProgress() { this.progressPanel.classList.remove('show'); }
 
   /* ── Results ──────────────────────────────────────────── */
+  /** 与后端 Translator.normalize_lang_code 对齐，用于 Tab 展示判断 */
+  _normLangTab(code) {
+    if (!code) return '';
+    const c = String(code).toLowerCase().trim();
+    if (c.startsWith('zh')) return 'zh';
+    if (c.length >= 2) return c.slice(0, 2);
+    return c;
+  }
+
   _showResults(script, summary, videoTitle, translation, detectedLang, summaryLang) {
     this.scriptContent.innerHTML  = script    ? marked.parse(script)      : '';
     this.summaryContent.innerHTML = summary   ? marked.parse(summary)     : '';
 
-    const showTranslation = translation && detectedLang && summaryLang && detectedLang !== summaryLang;
+    const d = this._normLangTab(detectedLang);
+    const s = this._normLangTab(summaryLang);
+    const showTranslation = Boolean(translation) && d && s && d !== s;
     if (showTranslation) {
       this.translationContent.innerHTML = marked.parse(translation);
       this.translationTabBtn.style.display  = 'inline-block';
@@ -591,6 +731,13 @@ class VideoTranscriber {
     this.submitBtn.innerHTML = on
       ? `<span class="spinner"></span> ${this.t('processing')}`
       : `<i class="fas fa-search"></i> <span>${this.t('start_transcription')}</span>`;
+    if (this.uploadPickBtn) this.uploadPickBtn.disabled = on;
+    if (this.uploadZone) {
+      this.uploadZone.style.pointerEvents = on ? 'none' : '';
+      this.uploadZone.style.opacity = on ? '0.65' : '';
+      this.uploadZone.tabIndex = on ? -1 : 0;
+    }
+    if (this.fileInput) this.fileInput.disabled = on;
   }
 
   _showError(msg) {

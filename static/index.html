@@ -167,6 +167,62 @@
     .btn-go:active { transform: scale(.98); }
     .btn-go:disabled { opacity: .5; cursor: not-allowed; transform: none; }
 
+    /* ── Upload zone ─────────────────────────────────────── */
+    .upload-section { margin-bottom: 18px; }
+    .upload-zone .upload-or {
+      font-size: 13px;
+      color: var(--text-dim);
+      margin: 0 0 8px;
+    }
+    .upload-zone {
+      border: 1px dashed var(--border-light);
+      border-radius: var(--r);
+      background: var(--surface-2);
+      padding: 22px 16px 20px;
+      text-align: center;
+      transition: border-color .2s, background .2s, box-shadow .2s;
+      cursor: pointer;
+    }
+    .upload-zone:hover,
+    .upload-zone:focus {
+      outline: none;
+      border-color: var(--accent-dim);
+      background: var(--surface-3);
+    }
+    .upload-zone.dragover {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(192,120,48,.15);
+    }
+    .upload-zone .upload-formats {
+      font-size: 12px;
+      color: var(--text-muted);
+      margin-bottom: 14px;
+      line-height: 1.5;
+    }
+    .btn-upload-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 9px 20px;
+      border-radius: 999px;
+      border: 1px solid var(--border-light);
+      background: var(--surface);
+      color: var(--text);
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: border-color .2s, color .2s, background .2s;
+    }
+    .btn-upload-pill:hover {
+      border-color: var(--accent);
+      color: var(--accent-text);
+    }
+    .btn-upload-pill:disabled {
+      opacity: .5;
+      cursor: not-allowed;
+      pointer-events: none;
+    }
+
     /* ── Settings row (toggle + summary lang) ───────────── */
     .settings-row {
       display: flex;
@@ -544,6 +600,18 @@
     </div>
   </form>
 
+  <div class="upload-section" id="uploadSection">
+    <div class="upload-zone" id="uploadZone" tabindex="0" role="button" aria-label="Upload files">
+      <p class="upload-or" data-i18n="upload_or">or drop your files</p>
+      <p class="upload-formats" data-i18n="upload_formats">.mp3 · .mp4 · .wav · .m4a · .webm · .mkv · .ogg · .flac</p>
+      <button type="button" class="btn-upload-pill" id="uploadPickBtn">
+        <i class="fas fa-upload"></i>
+        <span data-i18n="upload_files_btn">Upload files</span>
+      </button>
+    </div>
+    <input type="file" id="fileInput" accept=".txt,.mp3,.mp4,.m4a,.wav,.webm,.mkv,.ogg,.flac" hidden>
+  </div>
+
   <!-- Settings row: Summary Language + AI Settings toggle -->
   <div class="settings-row">
     <div class="inline-lang">
@@ -625,7 +693,7 @@
     <!-- Empty state (default) -->
     <div class="empty-state" id="emptyState">
       <span class="es-icon">☕</span>
-      <span class="es-text" data-i18n="empty_hint">Paste a video URL above and let AI do the heavy lifting.</span>
+      <span class="es-text" data-i18n="empty_hint">Paste a video URL or drop a file above and let AI do the heavy lifting.</span>
     </div>
 
     <!-- Progress -->
@@ -686,7 +754,7 @@
   </div><!-- /result-panel -->
 
   <div class="footer">
-    <p data-i18n="footer_text">This tool is part of <a href="https://sipsip.ai" target="_blank" style="color:var(--accent-text);text-decoration:none;">sipsip.ai</a> — transcribe any video, and get daily AI briefs from your favorite creators delivered to your inbox. Free to start.</p>
+    <p data-i18n="footer_text">This tool is part of <a href="https://sipsip.ai" target="_blank" style="color:var(--accent-text);text-decoration:none;">sipsip.ai</a> — distill any content, and get daily AI briefs from your favorite creators delivered to your inbox. Free to start.</p>
   </div>
 </main>
 

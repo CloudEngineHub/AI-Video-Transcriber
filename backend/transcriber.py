@@ -157,6 +157,6 @@ class Transcriber:
             for line in lines:
                 if "**Detected Language:**" in line:
                     lang = line.split(":")[-1].strip()
-                    return lang
+                    return lang if lang else None
         
         return None

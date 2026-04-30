@@ -2,6 +2,8 @@ import os
 import re
 import shutil
 import uuid
+import asyncio
+import subprocess
 import yt_dlp
 import logging
 from pathlib import Path
@@ -29,6 +31,32 @@ class VideoProcessor:
             'no_warnings': True,
             'noplaylist': True,  # 强制只下载单个视频，不下载播放列表
         }
+
+    async def normalize_local_media_to_m4a(self, input_path: Path, output_dir: Path) -> str:
+        """
+        将本地上传的音视频转为单声道 16kHz AAC m4a，供 Faster-Whisper 使用（与 yt-dlp 后处理参数对齐）。
+        """
+        output_dir.mkdir(parents=True, exist_ok=True)
+        unique_id = str(uuid.uuid4())[:8]
+        out_path = output_dir / f"upload_norm_{unique_id}.m4a"
+
+        cmd = [
+            "ffmpeg", "-y", "-nostdin", "-i", str(input_path.resolve()),
+            "-vn", "-ac", "1", "-ar", "16000",
+            "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart",
+            str(out_path.resolve()),
+        ]
+
+        def _run():
+            r = subprocess.run(cmd, capture_output=True, text=True)
+            if r.returncode != 0:
+                err = (r.stderr or r.stdout or "").strip()
+                raise Exception(f"FFmpeg 转换失败: {err[:800]}")
+            if not out_path.exists():
+                raise Exception("FFmpeg 未生成输出文件")
+
+        await asyncio.to_thread(_run)
+        return str(out_path)
     
     async def fetch_subtitles(self, url: str, output_dir: Path) -> tuple[Optional[str], Optional[str], Optional[str]]:
         """
@@ -296,16 +324,17 @@ class VideoProcessor:
             lines.append("")
         return "\n".join(lines)
 
-    async def download_and_convert(self, url: str, output_dir: Path) -> tuple[str, str]:
+    async def download_and_convert(
+        self,
+        url: str,
+        output_dir: Path,
+        prefetched_title: Optional[str] = None,
+    ) -> tuple[str, str]:
         """
-        下载视频并转换为m4a格式
-        
-        Args:
-            url: 视频链接
-            output_dir: 输出目录
-            
-        Returns:
-            转换后的音频文件路径
+        下载视频并转换为m4a格式。
+
+        prefetched_title: 若调用方已通过 fetch_subtitles 探测过视频信息，
+        可直接传入视频标题，跳过重复的 extract_info 网络请求。
         """
         try:
             # 创建输出目录
@@ -321,15 +350,19 @@ class VideoProcessor:
             
             logger.info(f"开始下载视频: {url}")
             
-            # 直接同步执行，不使用线程池
-            # 在FastAPI中，IO密集型操作可以直接await
             import asyncio
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                # 获取视频信息（放到线程池避免阻塞事件循环）
-                info = await asyncio.to_thread(ydl.extract_info, url, False)
-                video_title = info.get('title', 'unknown')
-                expected_duration = info.get('duration') or 0
-                logger.info(f"视频标题: {video_title}")
+                if prefetched_title:
+                    # 标题和时长已在 fetch_subtitles 中获取，直接下载，跳过重复探测
+                    video_title = prefetched_title
+                    expected_duration = 0
+                    logger.info(f"复用预取标题，跳过 extract_info: {video_title}")
+                else:
+                    # 获取视频信息（放到线程池避免阻塞事件循环）
+                    info = await asyncio.to_thread(ydl.extract_info, url, False)
+                    video_title = info.get('title', 'unknown')
+                    expected_duration = info.get('duration') or 0
+                    logger.info(f"视频标题: {video_title}")
                 
                 # 下载视频（放到线程池避免阻塞事件循环）
                 await asyncio.to_thread(ydl.download, [url])
