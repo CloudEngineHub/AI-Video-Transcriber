@@ -43,6 +43,18 @@ The LLM steps need an OpenAI-compatible key via `OPENAI_API_KEY` (and optionally
 basic formatting — prefer `--no-llm` in that case and summarize the transcript
 yourself, which is usually better anyway since you have the full context.
 
+Provider settings:
+
+```bash
+export OPENAI_API_KEY="your_api_key_here"
+export OPENAI_BASE_URL="https://openrouter.ai/api/v1"
+export OPENAI_TRANSLATION_MODEL="gpt-4o"  # optional
+```
+
+For a one-off run, `transcribe.py` also accepts `--api-key`, `--base-url`, and
+`--model`. Prefer environment variables when possible so API keys are not written
+to shell history.
+
 ## Reading the result
 
 ```json

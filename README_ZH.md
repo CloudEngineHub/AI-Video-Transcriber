@@ -204,6 +204,19 @@ venv/bin/python transcribe.py notes.txt --no-llm          # 无需 API Key
 | `-o, --output-dir` | Markdown 输出目录，默认 `./temp` |
 | `--json` / `-q` | 机器可读输出 / 静默进度 |
 
+#### Agent 的 AI 服务商配置
+
+CLI/agent 场景推荐用环境变量配置 OpenAI 兼容服务商：
+
+```bash
+export OPENAI_API_KEY="your_api_key_here"
+export OPENAI_BASE_URL="https://openrouter.ai/api/v1"
+export OPENAI_TRANSLATION_MODEL="gpt-4o"  # 可选
+```
+
+单次 CLI 调用也可以传 `--api-key`、`--base-url` 和 `--model`，但环境变量更安全，
+因为 API key 不会直接留在 shell history 里。
+
 ### Codex App plugin
 
 仓库也内置了一个 skills-only Codex 插件：
@@ -213,10 +226,15 @@ venv/bin/python transcribe.py notes.txt --no-llm          # 无需 API Key
 skills/video-transcribe/SKILL.md
 ```
 
-在 Codex App 的插件界面把它作为本地插件安装或刷新后，新建任务并从 Plugins 中选择
-**AI Video Transcriber** 即可。仓库带着插件文件不等于已经自动安装；修改插件后需要
-刷新或重新安装插件，并新开任务让 Codex 重新加载 skill。这个 skill 仍然包装上面的 CLI
-管线，所以运行 Codex 的机器仍需准备好本仓库的 `venv` 和 `ffmpeg`。
+这个仓库根目录就是 plugin root。在 Codex App 中把这个目录作为本地插件导入或安装后，
+新建任务并从 Plugins 中选择 **AI Video Transcriber** 即可。仓库带着插件文件不等于
+已经自动安装；修改插件后需要刷新或重新安装插件，并新开任务让 Codex 重新加载 skill。
+这个 skill 仍然包装上面的 CLI 管线，所以运行 Codex 的机器仍需准备好本仓库的 `venv`
+和 `ffmpeg`。
+
+Codex App 不会为这个 skills-only 插件自动生成项目专属的设置面板。想从 OpenRouter
+切换到其他 OpenAI 兼容端点，需要更新 Codex 任务可见的环境变量，或让 Codex 在单次
+运行 CLI 时传 `--base-url` / `--model`。
 
 这个插件暂不把本地 stdio MCP 服务打包进去。如果希望 Codex 直接调用
 `transcribe_video` MCP 工具，请按下面的方式单独注册 MCP server。
@@ -235,8 +253,15 @@ skills/video-transcribe/SKILL.md
 pip install "mcp>=2.0"
 
 # 在仓库根目录执行：
-claude mcp add video-transcriber -- "$(pwd)/venv/bin/python" "$(pwd)/mcp_server.py"
-codex mcp add video-transcriber -- "$(pwd)/venv/bin/python" "$(pwd)/mcp_server.py"
+claude mcp add video-transcriber \
+  -e OPENAI_API_KEY=your_api_key_here \
+  -e OPENAI_BASE_URL=https://openrouter.ai/api/v1 \
+  -- "$(pwd)/venv/bin/python" "$(pwd)/mcp_server.py"
+
+codex mcp add \
+  --env OPENAI_API_KEY=your_api_key_here \
+  --env OPENAI_BASE_URL=https://openrouter.ai/api/v1 \
+  video-transcriber -- "$(pwd)/venv/bin/python" "$(pwd)/mcp_server.py"
 ```
 
 如果更喜欢手动编辑 Codex 配置，也可以写入 `~/.codex/config.toml`：
@@ -245,7 +270,32 @@ codex mcp add video-transcriber -- "$(pwd)/venv/bin/python" "$(pwd)/mcp_server.p
 [mcp_servers.video-transcriber]
 command = "/abs/path/venv/bin/python"
 args = ["/abs/path/mcp_server.py"]
+
+[mcp_servers.video-transcriber.env]
+OPENAI_API_KEY = "your_api_key_here"
+OPENAI_BASE_URL = "https://openrouter.ai/api/v1"
 ```
+
+Claude Desktop 则把同样的 command 和 args 加到 Claude Desktop 的 MCP 配置中：
+
+```json
+{
+  "mcpServers": {
+    "video-transcriber": {
+      "command": "/abs/path/venv/bin/python",
+      "args": ["/abs/path/mcp_server.py"],
+      "env": {
+        "OPENAI_API_KEY": "your_api_key_here",
+        "OPENAI_BASE_URL": "https://openrouter.ai/api/v1"
+      }
+    }
+  }
+}
+```
+
+后续如果要换服务商，就更新 MCP 客户端保存的环境变量，或移除后用新的
+`OPENAI_BASE_URL` / 模型设置重新添加 MCP server；如果客户端会常驻 MCP 进程，
+还需要重启或刷新客户端。
 
 对外暴露一个工具 `transcribe_video`，返回转录、摘要、可选翻译、文件路径以及
 `no_speech` 标记。可用 `venv/bin/python mcp_server.py --selftest` 验证服务端是否正常，

@@ -204,6 +204,20 @@ Exit codes: `0` success, `2` bad input, `1` download/transcode failure.
 | `-o, --output-dir` | Where to write the Markdown, default `./temp` |
 | `--json` / `-q` | Machine-readable output / silence progress |
 
+#### AI provider settings for agents
+
+For CLI/agent use, configure the OpenAI-compatible provider with environment
+variables:
+
+```bash
+export OPENAI_API_KEY="your_api_key_here"
+export OPENAI_BASE_URL="https://openrouter.ai/api/v1"
+export OPENAI_TRANSLATION_MODEL="gpt-4o"  # optional
+```
+
+For one-off CLI runs you can also pass `--api-key`, `--base-url`, and `--model`,
+but environment variables are safer because API keys do not end up in shell history.
+
 ### Codex App plugin
 
 The repo also ships a skills-only Codex plugin:
@@ -213,12 +227,17 @@ The repo also ships a skills-only Codex plugin:
 skills/video-transcribe/SKILL.md
 ```
 
-Install or refresh it from the Codex App plugin UI as a local plugin, then start a
-new task and select **AI Video Transcriber** from Plugins. Shipping the plugin files
-does not install the plugin automatically; after changing the plugin, refresh or
-reinstall it and start a new task so Codex reloads the skill. The skill wraps the
-same CLI pipeline above, so the machine running Codex still needs this repo's `venv`
-and `ffmpeg`.
+This repository root is the plugin root. Import or install this folder as a local
+plugin in Codex App, then start a new task and select **AI Video Transcriber** from
+Plugins. Shipping the plugin files does not install the plugin automatically; after
+changing the plugin, refresh or reinstall it and start a new task so Codex reloads
+the skill. The skill wraps the same CLI pipeline above, so the machine running
+Codex still needs this repo's `venv` and `ffmpeg`.
+
+Codex App does not provide a plugin-specific settings panel for this skills-only
+plugin. To switch from OpenRouter to another OpenAI-compatible endpoint, update the
+environment variables available to the Codex task, or ask Codex to run the CLI with
+`--base-url` / `--model` for that specific run.
 
 This plugin intentionally does not bundle the local stdio MCP server. If you want
 Codex to call the `transcribe_video` MCP tool directly, register the MCP server
@@ -239,8 +258,15 @@ automatically; add it once per client.
 pip install "mcp>=2.0"
 
 # From the repository root:
-claude mcp add video-transcriber -- "$(pwd)/venv/bin/python" "$(pwd)/mcp_server.py"
-codex mcp add video-transcriber -- "$(pwd)/venv/bin/python" "$(pwd)/mcp_server.py"
+claude mcp add video-transcriber \
+  -e OPENAI_API_KEY=your_api_key_here \
+  -e OPENAI_BASE_URL=https://openrouter.ai/api/v1 \
+  -- "$(pwd)/venv/bin/python" "$(pwd)/mcp_server.py"
+
+codex mcp add \
+  --env OPENAI_API_KEY=your_api_key_here \
+  --env OPENAI_BASE_URL=https://openrouter.ai/api/v1 \
+  video-transcriber -- "$(pwd)/venv/bin/python" "$(pwd)/mcp_server.py"
 ```
 
 If you prefer editing Codex config directly, add this to `~/.codex/config.toml`:
@@ -249,7 +275,33 @@ If you prefer editing Codex config directly, add this to `~/.codex/config.toml`:
 [mcp_servers.video-transcriber]
 command = "/abs/path/venv/bin/python"
 args = ["/abs/path/mcp_server.py"]
+
+[mcp_servers.video-transcriber.env]
+OPENAI_API_KEY = "your_api_key_here"
+OPENAI_BASE_URL = "https://openrouter.ai/api/v1"
 ```
+
+For Claude Desktop, add the same command and args to your Claude Desktop MCP
+configuration:
+
+```json
+{
+  "mcpServers": {
+    "video-transcriber": {
+      "command": "/abs/path/venv/bin/python",
+      "args": ["/abs/path/mcp_server.py"],
+      "env": {
+        "OPENAI_API_KEY": "your_api_key_here",
+        "OPENAI_BASE_URL": "https://openrouter.ai/api/v1"
+      }
+    }
+  }
+}
+```
+
+To change providers later, update the MCP client's saved environment variables
+or remove and re-add the MCP server with the new `OPENAI_BASE_URL` / model settings,
+then restart or reload the client if it keeps MCP servers running.
 
 Exposes one tool, `transcribe_video`, returning the transcript, summary, optional
 translation, file paths, and a `no_speech` flag. Verify the wiring with
