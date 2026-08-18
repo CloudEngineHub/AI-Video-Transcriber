@@ -18,7 +18,7 @@ class VideoTranscriber {
     this.i18n = {
       en: {
         title:                   'AI Video Transcriber',
-        subtitle:                'Supports automatic transcription and AI summary for 30+ platforms',
+        subtitle:                'Automatic transcription, AI summary, and original video download for 30+ platforms',
         video_url_placeholder:   'Paste YouTube, Tiktok, Bilibili or other platform video URLs...',
         start_transcription:     'Transcribe',
         ai_settings:             'AI Settings',
@@ -35,11 +35,11 @@ class VideoTranscriber {
         transcript_text:         'Transcript',
         intelligent_summary:     'AI Summary',
         translation:             'Translation',
-        download_transcript:     'Transcript',
-        download_translation:    'Translation',
-        download_summary:        'Summary',
+        download_transcript:     'Download transcript',
+        download_translation:    'Download translation',
+        download_summary:        'Download summary',
         empty_hint:              'Paste a video URL or drop a file above and let AI do the heavy lifting.',
-        footer_text:             'This tool is part of <a href="https://sipsip.ai" target="_blank" style="color:var(--accent-text);text-decoration:none;">sipsip.ai</a> — distill anything and get daily AI briefs from your favorite creators',
+        footer_text:             'This tool is part of <a href="https://sipsip.ai" target="_blank" style="color:#fff;text-decoration:none;">sipsip.ai</a> — distill anything and get daily AI briefs from your favorite creators',
         processing:              'Processing…',
         downloading_video:       'Downloading audio…',
         parsing_video:           'Parsing video info…',
@@ -65,10 +65,18 @@ class VideoTranscriber {
         error_upload_type:       'Unsupported file type',
         error_upload_empty:      'File is empty',
         error_upload_size:       (mb) => `File exceeds ${mb} MB limit`,
+        keep_video:              'Keep original video',
+        original_media:          'Original video',
+        original_media_audio:    'Original audio',
+        download_video:          'Download original video',
+        download_audio:          'Download original audio',
+        preparing_video:         'Preparing original video…',
+        error_no_video:          'No video available for download',
+        no_speech_notice:        'No speech detected in this video, so there is nothing to transcribe. Summary and translation are skipped — the original video is still available below.',
       },
       zh: {
         title:                   'AI 视频转录器',
-        subtitle:                '粘贴 YouTube、TikTok 或任意公开视频链接，获取转录文本和 AI 摘要。',
+        subtitle:                '粘贴 YouTube、TikTok 或任意公开视频链接，获取转录文本、AI 摘要，并下载原视频。',
         video_url_placeholder:   '请输入视频链接…',
         start_transcription:     '开始转录',
         ai_settings:             'AI 设置',
@@ -85,11 +93,11 @@ class VideoTranscriber {
         transcript_text:         '转录文本',
         intelligent_summary:     '智能摘要',
         translation:             '翻译',
-        download_transcript:     '转录',
-        download_translation:    '翻译',
-        download_summary:        '摘要',
+        download_transcript:     '下载转录文本',
+        download_translation:    '下载翻译',
+        download_summary:        '下载摘要',
         empty_hint:              '在上方粘贴视频链接或拖放文件，让 AI 来处理一切。',
-        footer_text:             '本工具是 <a href="https://sipsip.ai" target="_blank" style="color:var(--accent-text);text-decoration:none;">sipsip.ai</a> 的一部分 — 提取任何内容要点并构建你自己的知识库。',
+        footer_text:             '本工具是 <a href="https://sipsip.ai" target="_blank" style="color:#fff;text-decoration:none;">sipsip.ai</a> 的一部分 — 提取任何内容要点并构建你自己的知识库。',
         processing:              '处理中…',
         downloading_video:       '正在下载音频…',
         parsing_video:           '正在解析视频信息…',
@@ -115,6 +123,14 @@ class VideoTranscriber {
         error_upload_type:       '不支持的文件类型',
         error_upload_empty:      '文件为空',
         error_upload_size:       (mb) => `文件超过 ${mb} MB 限制`,
+        keep_video:              '保留原视频',
+        original_media:          '原视频',
+        original_media_audio:    '原音频',
+        download_video:          '下载原视频',
+        download_audio:          '下载原音频',
+        preparing_video:         '正在准备原视频…',
+        error_no_video:          '没有可下载的视频',
+        no_speech_notice:        '这个视频中未检测到任何语音，因此没有可转录的内容。摘要与翻译已跳过 —— 原视频仍可在下方下载。',
       }
     };
 
@@ -147,8 +163,16 @@ class VideoTranscriber {
     this.dlScript           = document.getElementById('downloadScript');
     this.dlTranslation      = document.getElementById('downloadTranslation');
     this.dlSummary          = document.getElementById('downloadSummary');
-    this.translationTabBtn  = document.getElementById('translationTabBtn');
+    this.dlVideo            = document.getElementById('downloadVideo');
+    this.keepVideo          = document.getElementById('keepVideo');
+    this.mediaBlock         = document.getElementById('mediaBlock');
+    this.mediaFrame         = document.getElementById('mediaFrame');
+    this.mediaMeta          = document.getElementById('mediaMeta');
+    this.translationTabItem = document.getElementById('translationTabItem');
+    this.summaryTabItem     = document.getElementById('summaryTabItem');
+    this.noSpeechBanner     = document.getElementById('noSpeechBanner');
     this.tabBtns            = document.querySelectorAll('.tab-btn');
+    this.tabItems           = document.querySelectorAll('.tab-item');
     this.tabPanes           = document.querySelectorAll('.tab-pane');
     // settings
     this.settingsToggle     = document.getElementById('settingsToggle');
@@ -164,6 +188,9 @@ class VideoTranscriber {
     this.fileInput          = document.getElementById('fileInput');
     this.uploadMaxMb        = 200;
     this._allowedUploadExts = new Set(['.txt', '.mp3', '.mp4', '.m4a', '.wav', '.webm', '.mkv', '.ogg', '.flac']);
+    // 当前结果对应的原视频/音频（由 _renderMedia 填充）
+    this._mediaFile = null;
+    this._mediaName = null;
   }
 
   /* ── Events ───────────────────────────────────────────── */
@@ -191,8 +218,8 @@ class VideoTranscriber {
     this.apiKeyInput.addEventListener('input', debouncedFetch);
 
     // Persist settings
-    [this.modelBaseUrl, this.apiKeyInput, this.modelSelect, this.summaryLangSel].forEach(el => {
-      el.addEventListener('change', () => this._saveSettings());
+    [this.modelBaseUrl, this.apiKeyInput, this.modelSelect, this.summaryLangSel, this.keepVideo].forEach(el => {
+      if (el) el.addEventListener('change', () => this._saveSettings());
     });
 
     // Tabs
@@ -200,10 +227,20 @@ class VideoTranscriber {
       btn.addEventListener('click', () => this._switchTab(btn.dataset.tab));
     });
 
-    // Downloads
-    this.dlScript.addEventListener('click',      () => this._downloadFile('script'));
-    this.dlTranslation.addEventListener('click', () => this._downloadFile('translation'));
-    this.dlSummary.addEventListener('click',     () => this._downloadFile('summary'));
+    // Downloads — the tab icons fire without activating their tab, so you can
+    // grab the summary while still reading the transcript.
+    const bindTabDl = (el, type) => {
+      if (!el) return;
+      el.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        this._downloadFile(type);
+      });
+    };
+    bindTabDl(this.dlScript,      'script');
+    bindTabDl(this.dlTranslation, 'translation');
+    bindTabDl(this.dlSummary,     'summary');
+    if (this.dlVideo) this.dlVideo.addEventListener('click', () => this._downloadMedia());
 
     if (this.uploadPickBtn && this.fileInput && this.uploadZone) {
       this.uploadPickBtn.addEventListener('click', (e) => {
@@ -263,6 +300,13 @@ class VideoTranscriber {
       const v = this.t(el.dataset.i18nPlaceholder);
       if (typeof v === 'string') el.placeholder = v;
     });
+    // Icon-only buttons: the tooltip is also their accessible name
+    document.querySelectorAll('[data-i18n-title]').forEach(el => {
+      const v = this.t(el.dataset.i18nTitle);
+      if (typeof v === 'string') { el.title = v; el.setAttribute('aria-label', v); }
+    });
+
+    this._applyMediaLabels();
   }
 
   /* ── Settings persistence ─────────────────────────────── */
@@ -272,6 +316,7 @@ class VideoTranscriber {
       apiKey:   this.apiKeyInput.value,
       model:    this.modelSelect.value,
       summaryLang: this.summaryLangSel.value,
+      keepVideo: this.keepVideo ? this.keepVideo.checked : true,
     };
     try { localStorage.setItem('vt_settings', JSON.stringify(s)); } catch (_) {}
   }
@@ -284,6 +329,7 @@ class VideoTranscriber {
       if (s.baseUrl)     this.modelBaseUrl.value = s.baseUrl;
       if (s.apiKey)      this.apiKeyInput.value  = s.apiKey;
       if (s.summaryLang) this.summaryLangSel.value = s.summaryLang;
+      if (this.keepVideo && typeof s.keepVideo === 'boolean') this.keepVideo.checked = s.keepVideo;
       // Model options will be restored after fetching
       this._savedModel = s.model || '';
 
@@ -376,6 +422,7 @@ class VideoTranscriber {
       const fd = new FormData();
       fd.append('url',              url);
       fd.append('summary_language', sumLang);
+      fd.append('download_video',   this.keepVideo && this.keepVideo.checked ? '1' : '0');
 
       const apiKey  = this.apiKeyInput.value.trim();
       const baseUrl = this.modelBaseUrl.value.trim().replace(/\/$/, '');
@@ -481,7 +528,7 @@ class VideoTranscriber {
 
         if (task.status === 'completed') {
           this._stopSP(); this._stopSSE(); this._setLoading(false); this._hideProgress();
-          this._showResults(task.script, task.summary, task.video_title, task.translation, task.detected_language, task.summary_language);
+          this._showResults(task);
         } else if (task.status === 'error') {
           this._stopSP(); this._stopSSE(); this._setLoading(false); this._hideProgress();
           this._showError(task.error || 'Processing error');
@@ -498,7 +545,7 @@ class VideoTranscriber {
             const task = await r.json();
             if (task?.status === 'completed') {
               this._stopSP(); this._setLoading(false); this._hideProgress();
-              this._showResults(task.script, task.summary, task.video_title, task.translation, task.detected_language, task.summary_language);
+              this._showResults(task);
               return;
             }
           }
@@ -556,6 +603,11 @@ class VideoTranscriber {
       this.sp.stage = 'preparing';
       this.sp.target = 40;
     }
+    // ── 收尾等待原视频（须排在通用「下载/准备」判断之前）─────────────
+    else if (m.includes('原视频') || m.includes('original video')) {
+      this.sp.stage = 'finalizing';
+      this.sp.target = 99;
+    }
     // ── 通用字幕检测中 ─────────────────────────────────────────
     else if (m.includes('检测') && (m.includes('字幕') || m.includes('subtitle'))) {
       this.sp.stage = 'subtitle';
@@ -603,7 +655,7 @@ class VideoTranscriber {
   }
   _tickSP() {
     if (!this.sp.enabled || this.sp.current >= this.sp.target) return;
-    const speeds = { subtitle: .5, parsing: .3, downloading: .18, transcribing: .14, optimizing: .22, summarizing: .28 };
+    const speeds = { subtitle: .5, parsing: .3, downloading: .18, transcribing: .14, optimizing: .22, summarizing: .28, finalizing: .16 };
     let inc = speeds[this.sp.stage] || .2;
     const remaining = this.sp.target - this.sp.current;
     if (remaining < 5) inc *= .3;
@@ -622,6 +674,7 @@ class VideoTranscriber {
       transcribing:   this.t('transcribing_audio'),
       optimizing:     this.t('optimizing_transcript'),
       summarizing:    this.t('generating_summary'),
+      finalizing:     this.t('preparing_video'),
       completed:      this.t('completed'),
     };
     return map[this.sp.stage] || this.t('processing');
@@ -639,6 +692,8 @@ class VideoTranscriber {
     if      (m.includes('获取成功') || m.includes('subtitle found'))        label = this.t('subtitle_found');
     else if (m.includes('未找到字幕') || m.includes('no subtitle'))         label = this.t('no_subtitle');
     else if (m.includes('检测') && (m.includes('字幕') || m.includes('subtitle'))) label = this.t('detecting_subtitles');
+    // ── Original video (before the generic download/prepare checks) ──
+    else if (m.includes('原视频') || m.includes('original video')) label = this.t('preparing_video');
     // ── Audio / Whisper path ────────────────────────────────────
     else if (m.includes('下载') || m.includes('download'))  label = this.t('downloading_video');
     else if (m.includes('解析') || m.includes('pars'))      label = this.t('parsing_video');
@@ -655,6 +710,7 @@ class VideoTranscriber {
     this.emptyState.style.display    = 'none';
     this.resultsPanel.classList.remove('show');
     this.progressPanel.classList.add('show');
+    this._clearMedia();
     // Reset mode badge & progress bar color for new task
     if (this.modeBadge) { this.modeBadge.style.display = 'none'; this.modeBadge.className = 'mode-badge'; }
     if (this.progressFill) this.progressFill.classList.remove('subtitle-mode');
@@ -671,22 +727,34 @@ class VideoTranscriber {
     return c;
   }
 
-  _showResults(script, summary, videoTitle, translation, detectedLang, summaryLang) {
+  _showResults(task) {
+    const script      = task.script;
+    const summary     = task.summary;
+    const translation = task.translation;
+
     this.scriptContent.innerHTML  = script    ? marked.parse(script)      : '';
     this.summaryContent.innerHTML = summary   ? marked.parse(summary)     : '';
 
-    const d = this._normLangTab(detectedLang);
-    const s = this._normLangTab(summaryLang);
-    const showTranslation = Boolean(translation) && d && s && d !== s;
+    // No speech in the source: there is no summary or translation to show, and
+    // the backend deliberately skipped the LLM so nothing gets fabricated.
+    const noSpeech = Boolean(task.no_speech);
+    this.noSpeechBanner.classList.toggle('show', noSpeech);
+    this.summaryTabItem.style.display = noSpeech ? 'none' : 'flex';
+
+    const d = this._normLangTab(task.detected_language);
+    const s = this._normLangTab(task.summary_language);
+    const showTranslation = !noSpeech && Boolean(translation) && d && s && d !== s;
     if (showTranslation) {
       this.translationContent.innerHTML = marked.parse(translation);
-      this.translationTabBtn.style.display  = 'inline-block';
-      this.dlTranslation.style.display      = 'inline-flex';
+      this.translationTabItem.style.display = 'flex';
     } else {
-      this.translationTabBtn.style.display  = 'none';
-      this.dlTranslation.style.display      = 'none';
+      this.translationTabItem.style.display = 'none';
     }
 
+    this._renderMedia(task);
+
+    // Self-sufficient: don't rely on _showProgress() having hidden the empty state
+    this.emptyState.style.display = 'none';
     this.resultsPanel.classList.add('show');
     this._switchTab('script');
     this.resultsPanel.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -694,10 +762,92 @@ class VideoTranscriber {
 
   _hideResults() { this.resultsPanel.classList.remove('show'); }
 
+  /* ── Original video / audio ───────────────────────────── */
+  _renderMedia(task) {
+    this._clearMedia();
+
+    const file = task.media_filename;
+    if (!file) return;
+
+    this._mediaFile = file;
+    this._mediaName = task.media_download_name || file;
+
+    const isAudio = task.media_kind === 'audio';
+    this._mediaIsAudio = isAudio;
+    const el = document.createElement(isAudio ? 'audio' : 'video');
+    el.src       = `${this.apiBase}/media/${encodeURIComponent(file)}`;
+    el.controls  = true;
+    el.preload   = 'metadata';
+    el.className = isAudio ? 'media-audio' : 'media-video';
+    this.mediaFrame.appendChild(el);
+
+    this._applyMediaLabels();
+
+    const bits = [];
+    const ext = file.split('.').pop();
+    if (ext) bits.push(ext.toUpperCase());
+    const size = this._fmtSize(task.media_size_bytes);
+    if (size) bits.push(size);
+    this.mediaMeta.textContent = bits.join('  ·  ');
+
+    this.mediaBlock.style.display = 'block';
+    // Lives in the tab row now, so it needs toggling separately from the block
+    if (this.dlVideo) this.dlVideo.style.display = 'inline-flex';
+  }
+
+  /**
+   * Label + button wording follow the actual media kind (video vs audio).
+   * Re-applied on language switch, which would otherwise reset both to the
+   * video wording via their data-i18n keys.
+   */
+  _applyMediaLabels() {
+    if (!this.mediaBlock || !this._mediaFile) return;
+    const isAudio = this._mediaIsAudio;
+    const labelEl = this.mediaBlock.querySelector('[data-i18n="original_media"]');
+    const btnEl   = this.dlVideo && this.dlVideo.querySelector('[data-i18n="download_video"]');
+    if (labelEl) labelEl.textContent = this.t(isAudio ? 'original_media_audio' : 'original_media');
+    if (btnEl)   btnEl.textContent   = this.t(isAudio ? 'download_audio' : 'download_video');
+  }
+
+  /** Bytes → KB/MB/GB. Small clips shouldn't read as "0.0 MB". */
+  _fmtSize(bytes) {
+    if (!bytes || bytes <= 0) return '';
+    const units = ['B', 'KB', 'MB', 'GB'];
+    let v = bytes, i = 0;
+    while (v >= 1024 && i < units.length - 1) { v /= 1024; i++; }
+    return `${v < 10 && i > 0 ? v.toFixed(1) : Math.round(v)} ${units[i]}`;
+  }
+
+  /** Stop playback and drop the source so a new task can't inherit stale media. */
+  _clearMedia() {
+    this._mediaFile = null;
+    this._mediaName = null;
+    this._mediaIsAudio = false;
+    if (this.dlVideo) this.dlVideo.style.display = 'none';
+    if (!this.mediaBlock) return;
+    const el = this.mediaFrame.querySelector('video, audio');
+    if (el) { try { el.pause(); } catch (_) {} el.removeAttribute('src'); el.load?.(); }
+    this.mediaFrame.innerHTML = '';
+    this.mediaMeta.textContent = '';
+    this.mediaBlock.style.display = 'none';
+  }
+
+  _downloadMedia() {
+    if (!this._mediaFile) { this._showError(this.t('error_no_video')); return; }
+    const href = `${this.apiBase}/download/${encodeURIComponent(this._mediaFile)}`
+               + `?name=${encodeURIComponent(this._mediaName)}`;
+    const a = document.createElement('a');
+    a.href = href;
+    a.download = this._mediaName;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  }
+
   /* ── Tabs ─────────────────────────────────────────────── */
   _switchTab(name) {
-    this.tabBtns.forEach(b  => b.classList.toggle('active',  b.dataset.tab === name));
-    this.tabPanes.forEach(p => p.classList.toggle('active', p.id === `${name}Tab`));
+    this.tabItems.forEach(it => it.classList.toggle('active', it.dataset.tab === name));
+    this.tabPanes.forEach(p  => p.classList.toggle('active', p.id === `${name}Tab`));
   }
 
   /* ── Download ─────────────────────────────────────────── */

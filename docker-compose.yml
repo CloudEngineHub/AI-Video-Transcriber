@@ -12,6 +12,8 @@ services:
       - WHISPER_MODEL_SIZE=${WHISPER_MODEL_SIZE:-base}
       # 可选：本地上传单文件大小上限（MB），与本地环境变量一致
       - UPLOAD_MAX_MB=${UPLOAD_MAX_MB:-200}
+      # 可选：「保留原视频」下载的清晰度上限
+      - VIDEO_MAX_HEIGHT=${VIDEO_MAX_HEIGHT:-720}
       # 服务器配置
       - HOST=0.0.0.0
       - PORT=8000

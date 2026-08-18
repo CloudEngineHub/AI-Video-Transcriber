@@ -4,7 +4,7 @@
 
 English | [中文](README_ZH.md)
 
-An AI-powered tool to transcribe and summarize videos and podcasts — paste a URL from YouTube, TikTok, Bilibili, Apple Podcasts, SoundCloud, and 30+ platforms, **or upload a local file** (audio, video, or plain text).
+An AI-powered tool to transcribe, summarize, and archive videos and podcasts — paste a URL from YouTube, TikTok, Bilibili, Apple Podcasts, SoundCloud, and 30+ platforms, **or upload a local file** (audio, video, or plain text).
 
 ![Interface](en_video.png)
 
@@ -13,49 +13,64 @@ An AI-powered tool to transcribe and summarize videos and podcasts — paste a U
 ## ✨ Features
 
 - 🎥 **Multi-Platform Support**: Works with YouTube, TikTok, Bilibili, Apple Podcasts, SoundCloud, and 30+ more
-- 📁 **Local File Upload**: Drag-and-drop or pick a file — supported formats include `.txt` (treated as transcript text), `.mp3`, `.mp4`, `.m4a`, `.wav`, `.webm`, `.mkv`, `.ogg`, `.flac`. Media is normalized with FFmpeg for Whisper; the same optimize → translate → summarize pipeline runs as for URLs
-- ⚡ **Subtitle-First Architecture**: For platforms with native subtitles (e.g. YouTube), transcripts are extracted instantly — no audio download needed. Whisper is only used as a fallback, making the whole pipeline dramatically faster.
+- ⚡ **Subtitle-First Architecture**: For platforms with native subtitles (e.g. YouTube), transcripts are extracted instantly — no audio download needed. Whisper is only a fallback, making the whole pipeline dramatically faster
+- 🎬 **Original Video Download**: Keep the source video alongside the transcript. It downloads **in parallel** with transcription, previews inline in the results card, and saves with one click. On the Whisper path the audio is extracted from that same file, so the video is only fetched once. Toggle **Keep original video** off when you want text only
+- 📁 **Local File Upload**: Drag-and-drop or pick a file — `.txt` (treated as transcript text), `.mp3`, `.mp4`, `.m4a`, `.wav`, `.webm`, `.mkv`, `.ogg`, `.flac`. Media is normalized with FFmpeg for Whisper, then runs the same optimize → translate → summarize pipeline as URLs
 - 🗣️ **Intelligent Transcription**: High-accuracy speech-to-text using Faster-Whisper when subtitles aren't available
 - 🤖 **AI Text Optimization**: Automatic typo correction, sentence completion, and intelligent paragraphing
-- 🌍 **Multi-Language Summaries**: Generate intelligent summaries in multiple languages
-- 🔧 **Bring Your Own Model**: Configure any OpenAI-compatible API endpoint (OpenAI, OpenRouter, local LLM, etc.) directly in the UI — enter your API Base URL and API Key, then click **Fetch** to auto-discover all available models and select the one you want
+- 🌍 **Multi-Language Summaries**: Generate intelligent summaries in 11 languages
 - ⚙️ **Conditional Translation**: Auto-translates the transcript when the summary language differs from the source language
-- 📱 **Mobile-Friendly**: Perfect support for mobile devices
+- 🔧 **Bring Your Own Model**: Configure any OpenAI-compatible API endpoint (OpenAI, OpenRouter, local LLM, etc.) directly in the UI — enter your API Base URL and API Key, then click **Fetch** to auto-discover available models
+- 📡 **Live Progress**: Server-sent events stream real-time status, with a badge showing whether the job took the subtitle or Whisper path
+- 📱 **Mobile-Friendly**: Responsive layout, dark UI
 
-[![Star History Chart](https://api.star-history.com/svg?repos=wendy7756/AI-Video-Transcriber&type=Date)](https://star-history.com/#wendy7756/AI-Video-Transcriber&Date)
+## 📑 Contents
+
+- [Quick Start](#quick-start)
+- [Usage Guide](#usage-guide)
+- [API Reference](#api-reference)
+- [Technical Architecture](#architecture)
+- [Configuration Options](#configuration)
+- [FAQ](#faq)
+- [Supported Languages](#languages)
+- [Performance Tips](#performance)
+- [Contributing](#contributing)
+
+<a id="quick-start"></a>
 
 ## 🚀 Quick Start
 
 ### Prerequisites
 
 - Python 3.8+
-- FFmpeg (required for yt-dlp audio extraction and for normalizing uploaded media)
-- An API key from any OpenAI-compatible provider (OpenAI, OpenRouter, etc.) — configured directly in the UI, no server-side env var needed
+- FFmpeg (required for yt-dlp audio extraction, merging downloaded video, and normalizing uploaded media)
+- An API key from any OpenAI-compatible provider (OpenAI, OpenRouter, etc.) — configurable directly in the UI, no server-side env var needed
 
 ### Installation
 
-#### Method 1: Automatic Installation
+<details open>
+<summary><b>Method 1: Automatic Installation</b></summary>
 
 ```bash
-# Clone the repository
 git clone https://github.com/wendy7756/AI-Video-Transcriber.git
 cd AI-Video-Transcriber
 
-# Run installation script
 chmod +x install.sh
 ./install.sh
 ```
 
-#### Method 2: Docker
+</details>
+
+<details>
+<summary><b>Method 2: Docker</b></summary>
 
 ```bash
-# Clone the repository
 git clone https://github.com/wendy7756/AI-Video-Transcriber.git
 cd AI-Video-Transcriber
 
 # Using Docker Compose (easiest)
 cp .env.example .env
-# Edit .env file if you want server-side defaults (optional)
+# Edit .env if you want server-side defaults (optional)
 docker-compose up -d
 
 # Or using Docker directly
@@ -65,35 +80,40 @@ docker run -p 8000:8000 --env-file .env ai-video-transcriber
 
 The image uses **Python 3.12** (Debian Bookworm), upgrades `pip`/`setuptools`/`wheel`, then installs from `requirements.txt` — same version constraints as a fresh local venv on a current Python.
 
-#### Method 3: Manual Installation
+> **Tip:** transcripts and downloaded videos live in `/app/temp` inside the container. Uncomment the `volumes` block in `docker-compose.yml` to persist them on the host.
 
-1. **Install Python Dependencies**
+</details>
+
+<details>
+<summary><b>Method 3: Manual Installation</b></summary>
+
+**1. Install Python dependencies**
+
 ```bash
-# macOS (PEP 668) strongly recommends using a virtualenv
+# macOS (PEP 668) strongly recommends a virtualenv
 python3 -m venv venv
 source venv/bin/activate
 python -m pip install --upgrade pip
 pip install -r requirements.txt
 ```
 
-2. **Install FFmpeg**
+**2. Install FFmpeg**
+
 ```bash
-# macOS
-brew install ffmpeg
-
-# Ubuntu/Debian
-sudo apt update && sudo apt install ffmpeg
-
-# CentOS/RHEL
-sudo yum install ffmpeg
+brew install ffmpeg                              # macOS
+sudo apt update && sudo apt install ffmpeg       # Ubuntu/Debian
+sudo yum install ffmpeg                          # CentOS/RHEL
 ```
 
-3. **Configure Environment Variables** *(optional)*
+**3. Configure environment variables** *(optional)*
+
 ```bash
-# If you prefer server-side defaults, set these — otherwise configure via the UI
+# Only if you prefer server-side defaults — otherwise configure in the UI
 export OPENAI_API_KEY="your_api_key_here"
-export OPENAI_BASE_URL="https://openrouter.ai/api/v1"  # any OpenAI-compatible endpoint
+export OPENAI_BASE_URL="https://openrouter.ai/api/v1"   # any OpenAI-compatible endpoint
 ```
+
+</details>
 
 ### Start the Service
 
@@ -101,273 +121,353 @@ export OPENAI_BASE_URL="https://openrouter.ai/api/v1"  # any OpenAI-compatible e
 python3 start.py
 ```
 
-After the service starts, open your browser and visit `http://localhost:8000`
+Then open `http://localhost:8000`.
 
-#### Production Mode (Recommended for long videos)
-
-To avoid SSE disconnections during long processing, start in production mode (hot-reload disabled):
+**Production mode (recommended for long videos)** — disables hot-reload so the SSE connection stays stable across 30–60+ minute tasks:
 
 ```bash
 python3 start.py --prod
 ```
 
-This keeps the SSE connection stable throughout long tasks (30–60+ min).
-
-#### Run with explicit env (example)
+<details>
+<summary>Run with explicit env (example)</summary>
 
 ```bash
 source venv/bin/activate
-export OPENAI_API_KEY=your_api_key_here         # optional: server-side default
-# export OPENAI_BASE_URL=https://openrouter.ai/api/v1  # optional: server-side default
+export OPENAI_API_KEY=your_api_key_here                  # optional: server-side default
+# export OPENAI_BASE_URL=https://openrouter.ai/api/v1    # optional: server-side default
 python3 start.py --prod
 ```
 
+</details>
+
+<a id="usage-guide"></a>
+
 ## 📖 Usage Guide
 
-1. **Choose input — URL or file**
-   - **Video / podcast URL**: Paste a link from YouTube, Bilibili, or any other supported platform into the input field
-   - **Local file**: Drag a file onto the dashed upload area (or click to browse). Same **Transcribe** button starts the job; uploads use the same API route as URLs (`POST /api/process-video` with multipart `file`), which helps when a reverse proxy only allows that path
-2. **Select Summary Language**: Choose the output language from the dropdown next to the input area
-3. **(Optional) Configure AI Model**: Click **AI Settings** to expand the panel
-   - Enter your **API Base URL** (e.g. `https://openrouter.ai/api/v1`) and **API Key**
-   - Click **Fetch** to auto-load all models from that provider
-   - Select the model you want — or leave blank to use the server default
-4. **Start Processing**: Click the **Transcribe** button. For **URL** jobs, the progress bar shows which mode is active:
-   - **⚡ Subtitle** (green) — native subtitles found, transcript extracted in seconds
-   - **🎙 Whisper** (amber) — no subtitles available, downloading audio for transcription
-   For **local uploads**, media is normalized with FFmpeg then transcribed with Whisper; plain **`.txt`** files skip download/Whisper and go straight into the text pipeline (optimize → summary, and translation when languages differ).
-5. **View Results**: Review the optimized transcript and AI summary
-   - If transcript language ≠ selected summary language, a **Translation** tab appears automatically
-6. **Download Files**: Save Markdown-formatted files (Transcript / Translation / Summary)
+**1. Choose your input — URL or file**
+
+- **Video / podcast URL**: paste a link from YouTube, Bilibili, or any supported platform
+- **Local file**: drag a file onto the dashed upload area, or click to browse. The same **Transcribe** button starts the job. Uploads use the same API route as URLs (`POST /api/process-video` with a multipart `file`), which helps when a reverse proxy only allows that path
+
+**2. Pick your options**
+
+- **Summary Language** — the output language for the summary
+- **Keep original video** — on by default. Downloads the source video (≤720p) so you can preview and save it with the results. Turn it off for text-only jobs to save bandwidth and disk
+
+**3. (Optional) Configure your AI model** — click **AI Settings** to expand
+
+- Enter your **API Base URL** (e.g. `https://openrouter.ai/api/v1`) and **API Key**
+- Click **Fetch** to auto-load available models, then select one — or leave blank for the server default
+- Credentials are stored in your browser's `localStorage`, never sent anywhere but your chosen provider
+
+**4. Start processing** — click **Transcribe**. For **URL** jobs a badge shows the active mode:
+
+| Badge | Meaning |
+|-------|---------|
+| **⚡ Subtitle** (green) | Native subtitles found — transcript extracted in seconds |
+| **🎙 Whisper** (cyan) | No subtitles available — audio downloaded and transcribed |
+
+For **local uploads**, media is normalized with FFmpeg then transcribed with Whisper. Plain **`.txt`** files skip download and Whisper entirely, going straight into the text pipeline.
+
+**5. Review the results**
+
+- **Transcript** and **AI Summary** tabs are always present; a **Translation** tab appears automatically when the transcript language differs from your summary language
+- Each tab has its own **purple download icon** — click it to save that file without switching tabs
+- **Download original video** sits at the right of the tab row, next to an inline player showing the source file and its size
+
+<a id="api-reference"></a>
+
+## 🔌 API Reference
+
+All endpoints are served from the same origin as the UI.
+
+| Method | Endpoint | Purpose |
+|--------|----------|---------|
+| `POST` | `/api/process-video` | Start a job — accepts either a URL or a multipart `file` |
+| `POST` | `/api/process-upload` | Upload-only alias, identical behavior |
+| `GET` | `/api/task-status/{task_id}` | Poll a job's current state |
+| `GET` | `/api/task-stream/{task_id}` | SSE stream of live progress updates |
+| `GET` | `/api/download/{filename}` | Download a result as an attachment (`.md` or media). Optional `?name=` sets a friendly filename |
+| `GET` | `/api/media/{filename}` | Stream media inline for the player — supports HTTP Range, so seeking works |
+| `DELETE` | `/api/task/{task_id}` | Cancel a running job and drop its record |
+| `POST` | `/api/models` | Proxy: list models from any OpenAI-compatible provider |
+| `GET` | `/api/tasks/active` | Active job counters (debugging) |
+
+<details>
+<summary><b>Form fields for <code>POST /api/process-video</code></b></summary>
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `url` | string | `""` | Video/podcast URL. Omit when uploading a file |
+| `file` | file | – | Multipart upload. Takes precedence over `url` |
+| `summary_language` | string | `zh` | Target summary language code |
+| `download_video` | string | `1` | `0`/`false`/`no`/`off` disables the original video download |
+| `api_key` | string | `""` | Per-request API key; falls back to `OPENAI_API_KEY` |
+| `model_base_url` | string | `""` | Per-request OpenAI-compatible base URL |
+| `model_id` | string | `""` | Model to use; blank means server default |
+
+```bash
+# Transcribe a URL, skipping the video download
+curl -X POST http://localhost:8000/api/process-video \
+  -F "url=https://www.youtube.com/watch?v=VIDEO_ID" \
+  -F "summary_language=en" \
+  -F "download_video=0"
+```
+
+</details>
+
+<a id="architecture"></a>
 
 ## 🛠️ Technical Architecture
 
-### Backend Stack
-- **FastAPI**: Modern Python web framework
-- **yt-dlp**: Video downloading and processing
-- **FFmpeg**: Audio extraction and local upload normalization (mono 16 kHz for Whisper)
-- **Faster-Whisper**: Efficient speech transcription
-- **OpenAI API**: Intelligent text summarization
+**Backend** — FastAPI · yt-dlp (download & subtitle extraction) · FFmpeg (audio extraction, video merge, upload normalization to mono 16 kHz) · Faster-Whisper (transcription) · OpenAI-compatible API (optimization, translation, summary)
 
-### Frontend Stack
-- **HTML5 + CSS3**: Responsive interface design
-- **JavaScript (ES6+)**: Modern frontend interactions
-- **Marked.js**: Markdown rendering
-- **Font Awesome**: Icon library
+**Frontend** — vanilla HTML5/CSS3/ES6+ · Marked.js (Markdown rendering) · Font Awesome (icons) · SSE for live progress
+
+### Processing Pipeline
+
+```
+URL ──┬─→ probe subtitles ──found──→ parse VTT/SRT ─────────────┐
+      │                                                         │
+      │   (in parallel, if "Keep original video" is on)          ├─→ optimize
+      └─→ download video (≤720p) ──→ extract audio ──→ Whisper ──┘   → translate*
+                                                                     → summarize
+File ─→ normalize with FFmpeg ──→ Whisper ───────────────────────┘   → results
+       (.txt skips straight to the text pipeline)                    (* when languages differ)
+```
 
 ### Project Structure
+
 ```
 AI-Video-Transcriber/
-├── backend/                 # Backend code
-│   ├── main.py             # FastAPI main application
-│   ├── video_processor.py  # Video processing module
-│   ├── transcriber.py      # Transcription module
-│   ├── summarizer.py       # Summary module
-│   ├── translator.py       # Translation module
-│   └── llm_sanitize.py     # Post-process LLM outputs (strip boilerplate)
-├── static/                 # Frontend files
-│   ├── index.html          # Main page
-│   └── app.js              # Frontend logic
-├── temp/                   # Temporary files directory
-├── Dockerfile              # Docker image configuration
-├── docker-compose.yml      # Docker Compose configuration
-├── .dockerignore           # Docker ignore rules
-├── .env.example            # Environment variables template
-├── requirements.txt        # Python dependencies
-├── start.py               # Startup script
-└── README.md              # Project documentation
+├── backend/
+│   ├── main.py             # FastAPI app, routes, task orchestration
+│   ├── video_processor.py  # yt-dlp: subtitles, audio, original video
+│   ├── transcriber.py      # Faster-Whisper transcription
+│   ├── summarizer.py       # Transcript optimization + summary
+│   ├── translator.py       # Conditional translation
+│   └── llm_sanitize.py     # Post-process LLM output (strip boilerplate)
+├── static/
+│   ├── index.html          # UI markup + styles
+│   └── app.js              # Frontend logic, SSE, i18n
+├── temp/                   # Generated transcripts, summaries, media
+├── Dockerfile
+├── docker-compose.yml
+├── .env.example
+├── requirements.txt
+├── install.sh
+└── start.py                # Startup script (--prod disables hot reload)
 ```
+
+<a id="configuration"></a>
 
 ## ⚙️ Configuration Options
 
 ### Environment Variables
 
-| Variable | Description | Default | Required |
-|----------|-------------|---------|----------|
-| `OPENAI_API_KEY` | API key (server-side default) | - | No — can be set in UI instead |
-| `HOST` | Server address | `0.0.0.0` | No |
-| `PORT` | Server port | `8000` | No |
-| `WHISPER_MODEL_SIZE` | Whisper model size | `base` | No |
-| `UPLOAD_MAX_MB` | Maximum upload size for local files (MB) | `200` | No |
+All are optional — the app runs with defaults and accepts AI credentials from the UI.
 
-An optional dedicated endpoint `POST /api/process-upload` exists with the same behavior as sending `file` to `/api/process-video`.
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `OPENAI_API_KEY` | API key (server-side default) | – |
+| `OPENAI_BASE_URL` | OpenAI-compatible endpoint | provider default |
+| `OPENAI_TRANSLATION_MODEL` | Model used for translation | `gpt-4o` |
+| `WHISPER_MODEL_SIZE` | Whisper model size | `base` |
+| `UPLOAD_MAX_MB` | Max upload size per file (MB) | `200` |
+| `VIDEO_MAX_HEIGHT` | Max height for the original video download | `720` |
+| `HOST` | Server address | `0.0.0.0` |
+| `PORT` | Server port | `8000` |
+| `PRODUCTION_MODE` | Set to `true` to disable hot reload (same as `--prod`) | – |
 
 ### Whisper Model Size Options
 
-| Model | Parameters | English-only | Multilingual | Speed | Memory Usage |
-|-------|------------|--------------|--------------|-------|--------------|
-| tiny | 39 M | ✓ | ✓ | Fast | Low |
-| base | 74 M | ✓ | ✓ | Medium | Low |
-| small | 244 M | ✓ | ✓ | Medium | Medium |
-| medium | 769 M | ✓ | ✓ | Slow | Medium |
-| large | 1550 M | ✗ | ✓ | Very Slow | High |
+| Model | Parameters | Speed | Memory |
+|-------|------------|-------|--------|
+| tiny | 39 M | Fast | ~150 MB |
+| base | 74 M | Medium | ~250 MB |
+| small | 244 M | Medium | ~750 MB |
+| medium | 769 M | Slow | ~1.5 GB |
+| large | 1550 M | Very slow | ~3 GB |
+
+All sizes are multilingual; `tiny`–`medium` also ship English-only variants.
+
+<a id="faq"></a>
 
 ## 🔧 FAQ
 
-### Q: Why is transcription slow?
-A: Transcription speed depends on video length, Whisper model size, and hardware performance. Try using smaller models (like tiny or base) to improve speed.
+<details>
+<summary><b>Does keeping the original video slow things down?</b></summary>
 
-### Q: Which video platforms are supported?
-A: All platforms supported by yt-dlp, including but not limited to: YouTube, TikTok, Facebook, Instagram, Twitter, Bilibili, Youku, iQiyi, Tencent Video, etc.
+Usually not much. The download runs concurrently with transcription and summarization and is only awaited at the very end, so it mostly hides behind work that was happening anyway. On the Whisper path it actually *saves* a download, because the audio is extracted from the video file instead of fetching the media twice.
 
-### Q: What local file types and size limits apply?
-A: Allowed extensions include `.txt`, `.mp3`, `.mp4`, `.m4a`, `.wav`, `.webm`, `.mkv`, `.ogg`, `.flac`. Default max size is **200 MB** per file; override with the `UPLOAD_MAX_MB` environment variable on the server.
+Downloads are capped at 720p by default — lower `VIDEO_MAX_HEIGHT` to save bandwidth, or turn the toggle off entirely for text-only jobs. If the video download fails, transcription still completes normally and the results simply omit the player.
 
-### Q: What if the AI optimization features are unavailable?
-A: AI features require an API key from any OpenAI-compatible provider (OpenAI, OpenRouter, etc.). You can enter it directly in the **AI Settings** panel in the UI — no server restart needed. Alternatively, set `OPENAI_API_KEY` as an environment variable for a server-side default.
+</details>
 
-### Q: I get HTTP 500 errors when starting/using the service. Why?
-A: In most cases this is an environment configuration issue rather than a code bug. Please check:
-- Ensure a virtualenv is activated: `source venv/bin/activate`
-- Install deps inside the venv: `pip install -r requirements.txt`
-- Configure your API key in the **AI Settings** panel, or set `OPENAI_API_KEY` as an env var
-- Install FFmpeg: `brew install ffmpeg` (macOS) / `sudo apt install ffmpeg` (Debian/Ubuntu)
-- If port 8000 is occupied, stop the old process or change `PORT`
+<details>
+<summary><b>Does <code>temp/</code> grow over time?</b></summary>
 
-### Q: How to handle long videos?
-A: The system can process videos of any length, but processing time will increase accordingly. For very long videos, consider using smaller Whisper models.
+Yes. Transcripts, summaries, and downloaded videos are deliberately kept after a job finishes so you can still download them, and there is no automatic cleanup. Now that original videos are saved too, prune the directory periodically:
 
-### Q: How to use Docker for deployment?
-A: Docker provides the easiest deployment method:
-
-**Prerequisites:**
-- Install Docker Desktop from https://www.docker.com/products/docker-desktop/
-- Ensure Docker service is running
-
-**Quick Start:**
 ```bash
-# Clone and setup
+# Delete generated files older than 7 days
+find temp -type f -mtime +7 ! -name 'tasks.json' -delete
+```
+
+</details>
+
+<details>
+<summary><b>Why is transcription slow?</b></summary>
+
+Speed depends on video length, Whisper model size, and hardware. Use a smaller model (`tiny` or `base`) to speed it up. Note that videos with native subtitles skip Whisper entirely and finish in seconds.
+
+</details>
+
+<details>
+<summary><b>Which video platforms are supported?</b></summary>
+
+Everything yt-dlp supports — including YouTube, TikTok, Facebook, Instagram, X/Twitter, Bilibili, Youku, iQiyi, Tencent Video, Apple Podcasts, and SoundCloud.
+
+</details>
+
+<details>
+<summary><b>What local file types and size limits apply?</b></summary>
+
+Allowed extensions: `.txt`, `.mp3`, `.mp4`, `.m4a`, `.wav`, `.webm`, `.mkv`, `.ogg`, `.flac`. Default limit is **200 MB** per file — override with `UPLOAD_MAX_MB`.
+
+</details>
+
+<details>
+<summary><b>The AI features are unavailable — what now?</b></summary>
+
+They need an API key from any OpenAI-compatible provider. Enter it in the **AI Settings** panel in the UI (no restart needed), or set `OPENAI_API_KEY` for a server-side default. Without a key, transcription still works — Whisper runs locally — but optimization, translation, and summaries fall back to basic formatting.
+
+</details>
+
+<details>
+<summary><b>I get HTTP 500 errors. Why?</b></summary>
+
+Usually environment configuration rather than a code bug. Check that you:
+
+- Activated the virtualenv: `source venv/bin/activate`
+- Installed deps inside it: `pip install -r requirements.txt`
+- Configured an API key in **AI Settings**, or set `OPENAI_API_KEY`
+- Installed FFmpeg: `brew install ffmpeg` / `sudo apt install ffmpeg`
+- Freed port 8000, or changed `PORT`
+
+</details>
+
+<details>
+<summary><b>How do I deploy with Docker?</b></summary>
+
+**Prerequisites:** install Docker Desktop from https://www.docker.com/products/docker-desktop/ and make sure the service is running.
+
+```bash
 git clone https://github.com/wendy7756/AI-Video-Transcriber.git
 cd AI-Video-Transcriber
-cp .env.example .env
-# Edit .env file to set server-side defaults (optional)
+cp .env.example .env      # edit for server-side defaults (optional)
 
-# Start with Docker Compose (recommended)
-docker-compose up -d
+docker-compose up -d      # recommended
 
-# Or build and run manually
+# Or manually
 docker build -t ai-video-transcriber .
 docker run -p 8000:8000 --env-file .env ai-video-transcriber
 ```
 
-**Common Docker Issues:**
-- **Port conflict**: Change port mapping `-p 8001:8000` if 8000 is occupied
-- **Permission denied**: Ensure Docker Desktop is running and you have proper permissions
-- **Build fails**: Check disk space (need ~2GB free) and network connection
-- **Container won't start**: Check Docker logs with `docker logs <container_id>`
+**Common issues**
 
-**Docker Commands:**
+- **Port conflict** — remap with `-p 8001:8000`
+- **Permission denied** — confirm Docker Desktop is running
+- **Build fails** — check disk space (~2 GB free) and network
+- **Container won't start** — inspect `docker logs <container_id>`
+
+**Useful commands**
+
 ```bash
-# View running containers
-docker ps
-
-# Check container logs
-docker logs ai-video-transcriber-ai-video-transcriber-1
-
-# Stop service
-docker-compose down
-
-# Rebuild after changes
-docker-compose build --no-cache
+docker ps                                                    # running containers
+docker logs ai-video-transcriber-ai-video-transcriber-1      # logs
+docker-compose down                                          # stop
+docker-compose build --no-cache                              # rebuild
 ```
 
-### Q: What are the memory requirements?
-A: Memory usage varies depending on the deployment method and workload:
+</details>
 
-**Docker Deployment:**
-- **Base memory**: ~128MB for idle container
-- **During processing**: 500MB - 2GB depending on video length and Whisper model
-- **Docker image size**: ~1.6GB disk space required
-- **Recommended**: 4GB+ RAM for smooth operation
+<details>
+<summary><b>What are the memory requirements?</b></summary>
 
-**Traditional Deployment:**
-- **Base memory**: ~50-100MB for FastAPI server
-- **Whisper models memory usage**:
-  - `tiny`: ~150MB
-  - `base`: ~250MB  
-  - `small`: ~750MB
-  - `medium`: ~1.5GB
-  - `large`: ~3GB
-- **Peak usage**: Base + Model + Video processing (~500MB additional)
+**Docker:** ~128 MB idle, 500 MB–2 GB while processing, ~1.6 GB image. 4 GB+ RAM recommended.
 
-**Memory Optimization Tips:**
+**Traditional:** ~50–100 MB for the FastAPI server, plus the Whisper model (see the table above), plus roughly 500 MB peak for processing.
+
 ```bash
-# Use smaller Whisper model to reduce memory usage
-WHISPER_MODEL_SIZE=tiny  # or base
+# Reduce memory usage
+WHISPER_MODEL_SIZE=tiny
 
-# For Docker, limit container memory if needed
+# Limit container memory
 docker run -m 1g -p 8000:8000 --env-file .env ai-video-transcriber
 
-# Monitor memory usage
+# Monitor
 docker stats ai-video-transcriber-ai-video-transcriber-1
 ```
 
-### Q: Network connection errors or timeouts?
-A: If you encounter network-related errors during video downloading or API calls, try these solutions:
+</details>
 
-**Common Network Issues:**
-- Video download fails with "Unable to extract" or timeout errors
-- OpenAI API calls return connection timeout or DNS resolution failures
-- Docker image pull fails or is extremely slow
+<details>
+<summary><b>Network connection errors or timeouts?</b></summary>
 
-**Solutions:**
-1. **Switch VPN/Proxy**: Try connecting to a different VPN server or switch your proxy settings
-2. **Check Network Stability**: Ensure your internet connection is stable
-3. **Retry After Network Change**: Wait 30-60 seconds after changing network settings before retrying
-4. **Use Alternative Endpoints**: If using custom OpenAI endpoints, verify they're accessible from your network
-5. **Docker Network Issues**: Restart Docker Desktop if container networking fails
+Symptoms include "Unable to extract" or timeouts on download, API connection/DNS failures, and slow Docker pulls.
 
-**Quick Network Test:**
+1. **Switch VPN/proxy** to a different server
+2. **Check network stability**
+3. **Wait 30–60 seconds** after changing network settings before retrying
+4. **Verify custom endpoints** are reachable from your network
+5. **Restart Docker Desktop** if container networking fails
+
 ```bash
-# Test video platform access
-curl -I https://www.youtube.com/
-
-# Test your AI provider endpoint
-curl -I https://openrouter.ai
-
-# Test Docker Hub access
-docker pull hello-world
+curl -I https://www.youtube.com/     # platform access
+curl -I https://openrouter.ai        # AI provider
+docker pull hello-world              # Docker Hub
 ```
+
+</details>
+
+<a id="languages"></a>
 
 ## 🎯 Supported Languages
 
-### Transcription
-- Supports 100+ languages through Whisper
-- Automatic language detection
-- High accuracy for major languages
+**Transcription** — 100+ languages via Whisper, with automatic language detection.
 
-### Summary Generation
-- English
-- Chinese (Simplified)
-- Japanese
-- Korean
-- Spanish
-- French
-- German
-- Portuguese
-- Russian
-- Arabic
-- And more...
+**Summaries & Translation** — English, Chinese (Simplified), Japanese, Korean, Spanish, French, German, Italian, Portuguese, Russian, Arabic.
+
+**Interface** — English and Chinese, switchable from the top-right.
+
+<a id="performance"></a>
 
 ## 📈 Performance Tips
 
-- **Hardware Requirements**:
-  - Minimum: 4GB RAM, dual-core CPU
-  - Recommended: 8GB RAM, quad-core CPU
-  - Ideal: 16GB RAM, multi-core CPU, SSD storage
+**Hardware**
 
-- **Processing Time Estimates**:
+- Minimum: 4 GB RAM, dual-core CPU
+- Recommended: 8 GB RAM, quad-core CPU
+- Ideal: 16 GB RAM, multi-core CPU, SSD
 
-  | Video Length | Subtitle Mode | Whisper Mode | Notes |
-  |-------------|---------------|--------------|-------|
-  | 1 minute | ~5s | 30s–1 min | Subtitle mode needs no audio download |
-  | 5 minutes | ~10s | 2–5 min | YouTube auto-captions trigger subtitle mode |
-  | 15 minutes | ~15s | 5–15 min | Most YouTube videos support subtitle mode |
-  | 30+ minutes | ~20s | 15–60 min | Podcast/audio-only always uses Whisper |
+**Processing time estimates**
+
+| Video Length | Subtitle Mode | Whisper Mode | Notes |
+|--------------|---------------|--------------|-------|
+| 1 minute | ~5 s | 30 s–1 min | Subtitle mode needs no audio download |
+| 5 minutes | ~10 s | 2–5 min | YouTube auto-captions trigger subtitle mode |
+| 15 minutes | ~15 s | 5–15 min | Most YouTube videos support subtitle mode |
+| 30+ minutes | ~20 s | 15–60 min | Podcasts/audio-only always use Whisper |
+
+Times assume **Keep original video** is off. With it on, subtitle-mode jobs are bounded by the video download rather than the transcript — the download overlaps the AI steps, so the added wall-clock is usually well under the download time itself.
+
+<a id="contributing"></a>
 
 ## 🤝 Contributing
 
-We welcome Issues and Pull Requests!
+Issues and Pull Requests are welcome!
 
 1. Fork the project
 2. Create a feature branch (`git checkout -b feature/AmazingFeature`)
@@ -375,17 +475,16 @@ We welcome Issues and Pull Requests!
 4. Push to the branch (`git push origin feature/AmazingFeature`)
 5. Open a Pull Request
 
-
 ## Acknowledgments
 
-- [yt-dlp](https://github.com/yt-dlp/yt-dlp) - Powerful video downloading tool
-- [Faster-Whisper](https://github.com/guillaumekln/faster-whisper) - Efficient Whisper implementation
-- [FastAPI](https://fastapi.tiangolo.com/) - Modern Python web framework
-- [OpenAI](https://openai.com/) - Intelligent text processing API
+- [yt-dlp](https://github.com/yt-dlp/yt-dlp) — powerful video downloading tool
+- [Faster-Whisper](https://github.com/guillaumekln/faster-whisper) — efficient Whisper implementation
+- [FastAPI](https://fastapi.tiangolo.com/) — modern Python web framework
+- [OpenAI](https://openai.com/) — intelligent text processing API
 
 ## 📞 Contact
 
-For questions or suggestions, please submit an Issue or contact Wendy.
+For questions or suggestions, please open an Issue or contact Wendy.
 
 ---
 
@@ -394,6 +493,7 @@ For questions or suggestions, please submit an Issue or contact Wendy.
 This tool is the open-source part of **[sipsip.ai](https://sipsip.ai)**.
 
 The full product goes further:
+
 - 📧 **Daily email briefs** — follow your favorite creators and get an AI-curated digest in your inbox every morning
 - ⚡ Transcribe & summarize any video or podcast on demand
 - 🌐 Multi-language support across all features
@@ -404,6 +504,4 @@ The full product goes further:
 
 ---
 
-## ⭐ Star History
-
-If you find this project helpful, please consider giving it a star!
+⭐ If you find this project helpful, please consider giving it a star!

@@ -4,7 +4,7 @@
 
 中文 | [English](README.md)
 
-一款开源的AI视频/播客转录和摘要工具：支持YouTube、Bilibili、抖音、Apple Podcasts、SoundCloud等30+平台链接，**也支持本地上传**（音视频或纯文本）。
+一款开源的 AI 视频/播客转录、摘要与归档工具：支持 YouTube、Bilibili、抖音、Apple Podcasts、SoundCloud 等 30+ 平台链接，**也支持本地上传**（音视频或纯文本）。
 
 ![Interface](cn_video.png)
 
@@ -12,87 +12,108 @@
 
 ## ✨ 功能特性
 
-- 🎥 **多平台支持**: 支持YouTube、Bilibili、抖音、Apple Podcasts、SoundCloud等30+平台
-- 📁 **本地上传**: 支持拖放或选择文件。`.txt` 作为文稿直接走后续管线；音视频支持 `.mp3`、`.mp4`、`.m4a`、`.wav`、`.webm`、`.mkv`、`.ogg`、`.flac` 等，经 FFmpeg 转码后由 Whisper 转录，优化、翻译、摘要流程与链接任务一致
-- ⚡ **字幕优先架构**: 对有原生字幕的平台（如YouTube），直接提取字幕文本，无需下载音频，速度大幅提升；无字幕时自动回退至Whisper转录
-- 🗣️ **智能转录**: 无字幕时使用Faster-Whisper进行高精度语音转文字
-- 🤖 **AI文本优化**: 自动错别字修正、句子完整化和智能分段
-- 🌍 **多语言摘要**: 支持多种语言的智能摘要生成
-- 🔧 **自定义AI模型**: 在页面中直接配置任意OpenAI兼容接口（OpenAI、OpenRouter、本地LLM等）——输入API地址和Key，点击 **Fetch** 自动获取可用模型并选择
-- ⚙️ **条件式翻译**: 当所选摘要语言与转录语言不一致时，自动生成翻译
-- 📱 **移动适配**: 完美支持移动设备
+- 🎥 **多平台支持**：支持 YouTube、Bilibili、抖音、Apple Podcasts、SoundCloud 等 30+ 平台
+- ⚡ **字幕优先架构**：对有原生字幕的平台（如 YouTube）直接提取字幕文本，无需下载音频，速度大幅提升；无字幕时才回退到 Whisper 转录
+- 🎬 **原视频下载**：转录的同时保留源视频。下载与转录**并行进行**，结果卡片内可直接预览播放，一键保存。走 Whisper 路径时音轨直接从这个视频里抽取，因此同一个视频只下载一次。只要文本时关掉「保留原视频」即可
+- 📁 **本地上传**：支持拖放或选择文件 —— `.txt`（作为文稿直接进入后续管线）、`.mp3`、`.mp4`、`.m4a`、`.wav`、`.webm`、`.mkv`、`.ogg`、`.flac`。音视频经 FFmpeg 转码后由 Whisper 转录，优化、翻译、摘要流程与链接任务完全一致
+- 🗣️ **智能转录**：无字幕时使用 Faster-Whisper 进行高精度语音转文字
+- 🤖 **AI 文本优化**：自动错别字修正、句子完整化和智能分段
+- 🌍 **多语言摘要**：支持 11 种语言的智能摘要生成
+- ⚙️ **条件式翻译**：当所选摘要语言与转录语言不一致时，自动生成翻译
+- 🔧 **自定义 AI 模型**：在页面中直接配置任意 OpenAI 兼容接口（OpenAI、OpenRouter、本地 LLM 等）—— 输入 API 地址和 Key，点击 **Fetch** 自动获取可用模型并选择
+- 📡 **实时进度**：通过 SSE 推送实时状态，并用徽章标明本次走的是字幕模式还是 Whisper 模式
+- 📱 **移动适配**：响应式布局，深色界面
+
+## 📑 目录
+
+- [快速开始](#quick-start)
+- [使用指南](#usage-guide)
+- [接口说明](#api-reference)
+- [技术架构](#architecture)
+- [配置选项](#configuration)
+- [常见问题](#faq)
+- [支持的语言](#languages)
+- [性能提示](#performance)
+- [贡献指南](#contributing)
+
+<a id="quick-start"></a>
 
 ## 🚀 快速开始
 
 ### 环境要求
 
 - Python 3.8+
-- FFmpeg（链接下载与本地上传音视频转码均需）
-- 任意OpenAI兼容服务商的API Key（OpenAI、OpenRouter等）—— 直接在页面UI中配置，无需服务器环境变量
+- FFmpeg（链接音频提取、原视频合流、本地上传转码均需）
+- 任意 OpenAI 兼容服务商的 API Key（OpenAI、OpenRouter 等）—— 可直接在页面 UI 中配置，无需服务器环境变量
 
 ### 安装方法
 
-
-#### 方法一：自动安装
+<details open>
+<summary><b>方法一：自动安装</b></summary>
 
 ```bash
-# 克隆项目
 git clone https://github.com/wendy7756/AI-Video-Transcriber.git
 cd AI-Video-Transcriber
 
-# 运行安装脚本
 chmod +x install.sh
 ./install.sh
 ```
 
-#### 方法二：Docker部署
+</details>
+
+<details>
+<summary><b>方法二：Docker 部署</b></summary>
 
 ```bash
-# 克隆项目
 git clone https://github.com/wendy7756/AI-Video-Transcriber.git
 cd AI-Video-Transcriber
 
-# 使用Docker Compose（最简单）
+# 使用 Docker Compose（最简单）
 cp .env.example .env
-# 编辑.env文件设置服务端默认值（可选）
+# 编辑 .env 设置服务端默认值（可选）
 docker-compose up -d
 
-# 或者直接使用Docker
+# 或者直接使用 Docker
 docker build -t ai-video-transcriber .
 docker run -p 8000:8000 --env-file .env ai-video-transcriber
 ```
 
-镜像基于 **Python 3.12**（Debian Bookworm），构建时会先升级 `pip` / `setuptools` / `wheel`，再按 `requirements.txt` 安装，与本地在新版 Python 下创建虚拟环境后 `pip install -r requirements.txt` 的解析方式一致。
+镜像基于 **Python 3.12**（Debian Bookworm），构建时会先升级 `pip` / `setuptools` / `wheel`，再按 `requirements.txt` 安装，与本地在新版 Python 下创建虚拟环境后安装的解析方式一致。
 
-#### 方法三：手动安装
+> **提示**：转录文件与下载的原视频保存在容器内 `/app/temp`。如需持久化到宿主机，请取消 `docker-compose.yml` 中 `volumes` 部分的注释。
 
-1. **安装Python依赖**（建议使用虚拟环境）
+</details>
+
+<details>
+<summary><b>方法三：手动安装</b></summary>
+
+**1. 安装 Python 依赖**（建议使用虚拟环境）
+
 ```bash
-# 创建并启用虚拟环境（macOS推荐，避免 PEP 668 系统限制）
+# 创建并启用虚拟环境（macOS 推荐，避免 PEP 668 系统限制）
 python3 -m venv venv
 source venv/bin/activate
 python -m pip install --upgrade pip
 pip install -r requirements.txt
 ```
 
-2. **安装FFmpeg**
+**2. 安装 FFmpeg**
+
 ```bash
-# macOS
-brew install ffmpeg
-
-# Ubuntu/Debian
-sudo apt update && sudo apt install ffmpeg
-
-# CentOS/RHEL
-sudo yum install ffmpeg
+brew install ffmpeg                              # macOS
+sudo apt update && sudo apt install ffmpeg       # Ubuntu/Debian
+sudo yum install ffmpeg                          # CentOS/RHEL
 ```
 
-3. **配置环境变量**（可选）
+**3. 配置环境变量**（可选）
+
 ```bash
 # 如需服务端默认值可设置，否则直接在页面 AI Settings 面板中配置
 export OPENAI_API_KEY="your_api_key_here"
-export OPENAI_BASE_URL="https://openrouter.ai/api/v1"  # 任意兼容端点
+export OPENAI_BASE_URL="https://openrouter.ai/api/v1"   # 任意兼容端点
 ```
+
+</details>
 
 ### 启动服务
 
@@ -100,293 +121,370 @@ export OPENAI_BASE_URL="https://openrouter.ai/api/v1"  # 任意兼容端点
 python3 start.py
 ```
 
-服务启动后，打开浏览器访问 `http://localhost:8000`
+服务启动后，打开浏览器访问 `http://localhost:8000`。
 
-#### 生产模式（推荐用于长视频）
-
-为了避免在处理长视频时SSE连接断开，建议使用生产模式启动（禁用热重载）：
+**生产模式（推荐用于长视频）** —— 禁用热重载，让 SSE 连接在 30–60+ 分钟的长任务中保持稳定：
 
 ```bash
 python3 start.py --prod
 ```
 
-这样可以在长时间任务（30-60+分钟）中保持SSE连接稳定。
-
-#### 使用显式环境变量启动（示例）
+<details>
+<summary>使用显式环境变量启动（示例）</summary>
 
 ```bash
 source venv/bin/activate
-export OPENAI_API_KEY=your_api_key_here         # 可选：服务端默认值
-# export OPENAI_BASE_URL=https://openrouter.ai/api/v1  # 可选：服务端默认值
+export OPENAI_API_KEY=your_api_key_here                  # 可选：服务端默认值
+# export OPENAI_BASE_URL=https://openrouter.ai/api/v1    # 可选：服务端默认值
 python3 start.py --prod
 ```
 
+</details>
+
+<a id="usage-guide"></a>
+
 ## 📖 使用指南
 
-1. **选择输入方式：链接或本地文件**
-   - **视频/播客链接**：在输入框粘贴 YouTube、Bilibili 等支持的链接
-   - **本地上传**：将文件拖到虚线框内，或点击选择文件。点击同一 **Transcribe** 按钮开始处理；上传与链接共用 `POST /api/process-video`（multipart 带 `file` 字段），便于反向代理只放行该路径时仍可使用上传
-2. **选择摘要语言**: 在输入框旁的下拉菜单中选择输出语言
-3. **（可选）配置AI模型**: 点击 **AI Settings** 展开配置面板
-   - 填写 **API Base URL**（如 `https://openrouter.ai/api/v1`）和 **API Key**
-   - 点击 **Fetch** 自动拉取该服务商的可用模型列表
-   - 选择你想用的模型，不填则使用服务器默认模型
-4. **开始处理**: 点击 **Transcribe** 按钮。**链接任务**下进度条会显示当前模式：
-   - **⚡ Subtitle**（绿色）——检测到原生字幕，秒级提取完成
-   - **🎙 Whisper**（橙色）——无字幕，下载音频后转录
-   **本地上传**时：音视频会先经 FFmpeg 转码再由 Whisper 转录；纯 **`.txt`** 文件不下载、不跑 Whisper，直接进入文本优化与摘要（语言不一致时同样会翻译）。
-5. **查看结果**: 查看优化后的转录文本和AI摘要
-   - 若转录语言 ≠ 所选摘要语言，会自动显示 **翻译** 标签页
-6. **下载文件**: 点击下载按钮保存Markdown格式文件（转录 / 翻译 / 摘要）
+**1. 选择输入方式：链接或本地文件**
+
+- **视频/播客链接**：在输入框粘贴 YouTube、Bilibili 等支持的平台链接
+- **本地上传**：将文件拖到虚线框内，或点击选择文件。点击同一个 **Transcribe** 按钮开始处理。上传与链接共用 `POST /api/process-video`（multipart 带 `file` 字段），便于反向代理只放行该路径时仍可使用上传
+
+**2. 选择处理选项**
+
+- **摘要语言** —— 摘要输出使用的语言
+- **保留原视频** —— 默认开启。会下载源视频（≤720p），可在结果区预览和保存。只要文本时关掉它可以节省带宽和磁盘
+
+**3.（可选）配置 AI 模型** —— 点击 **AI Settings** 展开面板
+
+- 填写 **API Base URL**（如 `https://openrouter.ai/api/v1`）和 **API Key**
+- 点击 **Fetch** 自动拉取该服务商的可用模型列表，然后选择；留空则使用服务器默认模型
+- 凭据保存在浏览器 `localStorage` 中，只会发往你自己指定的服务商
+
+**4. 开始处理** —— 点击 **Transcribe**。**链接任务**会显示当前模式徽章：
+
+| 徽章 | 含义 |
+|------|------|
+| **⚡ Subtitle**（绿色） | 检测到原生字幕，秒级提取完成 |
+| **🎙 Whisper**（青色） | 无字幕，下载音频后转录 |
+
+**本地上传**时：音视频先经 FFmpeg 转码再由 Whisper 转录；纯 **`.txt`** 文件不下载、不跑 Whisper，直接进入文本优化与摘要流程。
+
+**5. 查看结果**
+
+- **转录文本** 和 **智能摘要** 标签页始终存在；当转录语言与所选摘要语言不一致时，会自动出现 **翻译** 标签页
+- 每个标签页右侧都有独立的**紫色下载图标**，不切换标签也能直接下载对应文件
+- **Download original video** 按钮位于标签栏右侧，下方是内嵌播放器，显示源文件及其大小
+
+<a id="api-reference"></a>
+
+## 🔌 接口说明
+
+所有接口与前端页面同源。
+
+| 方法 | 路径 | 用途 |
+|------|------|------|
+| `POST` | `/api/process-video` | 创建任务 —— 接受链接或 multipart `file` |
+| `POST` | `/api/process-upload` | 仅上传的等价入口，行为一致 |
+| `GET` | `/api/task-status/{task_id}` | 轮询任务状态 |
+| `GET` | `/api/task-stream/{task_id}` | SSE 实时进度流 |
+| `GET` | `/api/download/{filename}` | 以附件形式下载结果（`.md` 或媒体文件），可选 `?name=` 指定友好文件名 |
+| `GET` | `/api/media/{filename}` | 内联播放媒体，支持 HTTP Range，可拖动进度条 |
+| `DELETE` | `/api/task/{task_id}` | 取消运行中的任务并删除记录 |
+| `POST` | `/api/models` | 代理：拉取任意 OpenAI 兼容服务商的模型列表 |
+| `GET` | `/api/tasks/active` | 活跃任务计数（调试用） |
+
+<details>
+<summary><b><code>POST /api/process-video</code> 的表单字段</b></summary>
+
+| 字段 | 类型 | 默认值 | 说明 |
+|------|------|--------|------|
+| `url` | string | `""` | 视频/播客链接，上传文件时可不传 |
+| `file` | file | – | Multipart 上传，优先级高于 `url` |
+| `summary_language` | string | `zh` | 摘要目标语言代码 |
+| `download_video` | string | `1` | 传 `0`/`false`/`no`/`off` 可关闭原视频下载 |
+| `api_key` | string | `""` | 单次请求使用的 API Key，未传则回落到 `OPENAI_API_KEY` |
+| `model_base_url` | string | `""` | 单次请求使用的 OpenAI 兼容地址 |
+| `model_id` | string | `""` | 使用的模型，留空则用服务端默认 |
+
+```bash
+# 转录链接，同时跳过原视频下载
+curl -X POST http://localhost:8000/api/process-video \
+  -F "url=https://www.youtube.com/watch?v=VIDEO_ID" \
+  -F "summary_language=zh" \
+  -F "download_video=0"
+```
+
+</details>
+
+<a id="architecture"></a>
 
 ## 🛠️ 技术架构
 
-### 后端技术栈
-- **FastAPI**: 现代化的Python Web框架
-- **yt-dlp**: 视频下载和处理
-- **FFmpeg**: 音频提取与本地上传转码（Whisper 用单声道 16kHz 等）
-- **Faster-Whisper**: 高效的语音转录
-- **OpenAI API**: 智能文本摘要
+**后端** —— FastAPI · yt-dlp（下载与字幕提取）· FFmpeg（音频提取、视频合流、上传文件转码为单声道 16 kHz）· Faster-Whisper（转录）· OpenAI 兼容接口（优化、翻译、摘要）
 
-### 前端技术栈
-- **HTML5 + CSS3**: 响应式界面设计
-- **JavaScript (ES6+)**: 现代化的前端交互
-- **Marked.js**: Markdown渲染
-- **Font Awesome**: 图标库
+**前端** —— 原生 HTML5/CSS3/ES6+ · Marked.js（Markdown 渲染）· Font Awesome（图标）· SSE 实时进度
+
+### 处理流程
+
+```
+链接 ──┬─→ 探测字幕 ──有字幕──→ 解析 VTT/SRT ──────────────┐
+       │                                                  │
+       │   （若开启「保留原视频」，与下面并行）                 ├─→ 文本优化
+       └─→ 下载原视频（≤720p）──→ 抽取音轨 ──→ Whisper ──────┘   → 翻译*
+                                                              → 生成摘要
+文件 ─→ FFmpeg 转码 ──→ Whisper ─────────────────────────────┘   → 展示结果
+      （.txt 直接进入文本管线）                                  (* 语言不一致时)
+```
 
 ### 项目结构
-```
-AI-Video-Transcriber/
-├── backend/                 # 后端代码
-│   ├── main.py             # FastAPI主应用
-│   ├── video_processor.py  # 视频处理模块
-│   ├── transcriber.py      # 转录模块
-│   ├── summarizer.py       # 摘要模块
-│   ├── translator.py       # 翻译模块
-│   └── llm_sanitize.py     # LLM 输出后处理（去除套话等）
-├── static/                 # 前端文件
-│   ├── index.html          # 主页面
-│   └── app.js              # 前端逻辑
-├── temp/                   # 临时文件目录
-├── Docker相关文件           # Docker部署
-│   ├── Dockerfile          # Docker镜像配置
-│   ├── docker-compose.yml  # Docker Compose配置
-│   └── .dockerignore       # Docker忽略规则
-├── .env.example        # 环境变量模板
-├── requirements.txt    # Python依赖
-└── start.py           # 启动脚本
 
 ```
+AI-Video-Transcriber/
+├── backend/
+│   ├── main.py             # FastAPI 应用、路由、任务编排
+│   ├── video_processor.py  # yt-dlp：字幕、音频、原视频
+│   ├── transcriber.py      # Faster-Whisper 转录
+│   ├── summarizer.py       # 文稿优化 + 摘要
+│   ├── translator.py       # 条件式翻译
+│   └── llm_sanitize.py     # LLM 输出后处理（去除套话等）
+├── static/
+│   ├── index.html          # 页面结构与样式
+│   └── app.js              # 前端逻辑、SSE、多语言
+├── temp/                   # 生成的转录、摘要与媒体文件
+├── Dockerfile
+├── docker-compose.yml
+├── .env.example
+├── requirements.txt
+├── install.sh
+└── start.py                # 启动脚本（--prod 禁用热重载）
+```
+
+<a id="configuration"></a>
 
 ## ⚙️ 配置选项
 
 ### 环境变量
 
-| 变量名 | 描述 | 默认值 | 必需 |
-|--------|------|--------|------|
-| `OPENAI_API_KEY` | API密钥（服务端默认值） | - | 否，可在UI中配置 |
-| `HOST` | 服务器地址 | `0.0.0.0` | 否 |
-| `PORT` | 服务器端口 | `8000` | 否 |
-| `WHISPER_MODEL_SIZE` | Whisper模型大小 | `base` | 否 |
-| `UPLOAD_MAX_MB` | 本地上传单文件大小上限（MB） | `200` | 否 |
+全部为可选项 —— 不配置也能运行，AI 凭据可直接在页面中填写。
 
-另提供可选接口 `POST /api/process-upload`，与向 `/api/process-video` 提交 `file`  multipart 字段行为一致。
+| 变量名 | 说明 | 默认值 |
+|--------|------|--------|
+| `OPENAI_API_KEY` | API 密钥（服务端默认值） | – |
+| `OPENAI_BASE_URL` | OpenAI 兼容端点 | 服务商默认 |
+| `OPENAI_TRANSLATION_MODEL` | 翻译使用的模型 | `gpt-4o` |
+| `WHISPER_MODEL_SIZE` | Whisper 模型大小 | `base` |
+| `UPLOAD_MAX_MB` | 本地上传单文件大小上限（MB） | `200` |
+| `VIDEO_MAX_HEIGHT` | 原视频下载的清晰度上限 | `720` |
+| `HOST` | 服务器地址 | `0.0.0.0` |
+| `PORT` | 服务器端口 | `8000` |
+| `PRODUCTION_MODE` | 设为 `true` 可禁用热重载（等同 `--prod`） | – |
 
-### Whisper模型大小选项
+### Whisper 模型大小选项
 
-| 模型 | 参数量 | 英语专用 | 多语言 | 速度 | 内存占用 |
-|------|--------|----------|--------|------|----------|
-| tiny | 39 M | ✓ | ✓ | 快 | 低 |
-| base | 74 M | ✓ | ✓ | 中 | 低 |
-| small | 244 M | ✓ | ✓ | 中 | 中 |
-| medium | 769 M | ✓ | ✓ | 慢 | 中 |
-| large | 1550 M | ✗ | ✓ | 很慢 | 高 |
+| 模型 | 参数量 | 速度 | 内存占用 |
+|------|--------|------|----------|
+| tiny | 39 M | 快 | 约 150 MB |
+| base | 74 M | 中 | 约 250 MB |
+| small | 244 M | 中 | 约 750 MB |
+| medium | 769 M | 慢 | 约 1.5 GB |
+| large | 1550 M | 很慢 | 约 3 GB |
+
+所有尺寸均支持多语言，`tiny`–`medium` 另有英语专用版本。
+
+<a id="faq"></a>
 
 ## 🔧 常见问题
 
-### Q: 为什么转录速度很慢？
-A: 转录速度取决于视频长度、Whisper模型大小和硬件性能。可以尝试使用更小的模型（如tiny或base）来提高速度。
+<details>
+<summary><b>保留原视频会让处理变慢吗？</b></summary>
 
-### Q: 支持哪些视频平台？
-A: 支持所有yt-dlp支持的平台，包括但不限于：YouTube、抖音、Bilibili、优酷、爱奇艺、腾讯视频等。
+通常影响不大。下载与转录、摘要并行执行，只在最后收尾时等待，因此大部分时间被本来就要做的工作掩盖掉了。走 Whisper 路径时它反而**省下一次下载** —— 音轨直接从这个视频文件里抽取，不必把媒体下载两遍。
 
-### Q: 本地上传支持哪些格式？大小有限制吗？
-A: 允许的扩展名包括 `.txt`、`.mp3`、`.mp4`、`.m4a`、`.wav`、`.webm`、`.mkv`、`.ogg`、`.flac`。默认单文件上限 **200 MB**，可在服务端通过环境变量 `UPLOAD_MAX_MB` 调整。
+默认限制在 720p，可以调低 `VIDEO_MAX_HEIGHT` 节省带宽，或只要文本时直接关掉开关。即使原视频下载失败，转录也会正常完成，只是结果区不显示播放器。
 
-### Q: AI优化功能不可用怎么办？
-A: AI功能需要任意OpenAI兼容服务商的API Key（OpenAI、OpenRouter等）。可直接在页面 **AI Settings** 面板中填写，无需重启服务。也可通过 `OPENAI_API_KEY` 环境变量设置服务端默认值。
+</details>
 
-### Q: 出现 500 报错/白屏，是代码问题吗？
-A: 多数情况下是环境配置问题，请按以下清单排查：
-- 是否已激活虚拟环境：`source venv/bin/activate`
-- 依赖是否安装在虚拟环境中：`pip install -r requirements.txt`
-- 是否在页面 **AI Settings** 面板中配置了API Key，或通过 `OPENAI_API_KEY` 环境变量设置
-- 是否已安装 FFmpeg：macOS `brew install ffmpeg` / Debian/Ubuntu `sudo apt install ffmpeg`
-- 8000 端口是否被占用；如被占用请关闭旧进程或更换端口
+<details>
+<summary><b><code>temp/</code> 目录会一直变大吗？</b></summary>
 
-### Q: 如何处理长视频？
-A: 系统可以处理任意长度的视频，但处理时间会相应增加。建议对于超长视频使用较小的Whisper模型。
+会。转录、摘要和下载的原视频在任务结束后会特意保留，方便随时下载，目前没有自动清理。现在还会存原视频，建议定期清理：
 
-### Q: 如何使用Docker部署？
-A: Docker提供了最简单的部署方式：
-
-**前置条件：**
-- 从 https://www.docker.com/products/docker-desktop/ 安装Docker Desktop
-- 确保Docker服务正在运行
-
-**快速开始：**
 ```bash
-# 克隆和配置
+# 删除 7 天前生成的文件
+find temp -type f -mtime +7 ! -name 'tasks.json' -delete
+```
+
+</details>
+
+<details>
+<summary><b>为什么转录速度很慢？</b></summary>
+
+转录速度取决于视频长度、Whisper 模型大小和硬件性能。可以换用更小的模型（`tiny` 或 `base`）提速。另外，有原生字幕的视频会完全跳过 Whisper，几秒即可完成。
+
+</details>
+
+<details>
+<summary><b>支持哪些视频平台？</b></summary>
+
+支持所有 yt-dlp 支持的平台，包括但不限于 YouTube、抖音、Facebook、Instagram、X/Twitter、Bilibili、优酷、爱奇艺、腾讯视频、Apple Podcasts、SoundCloud 等。
+
+</details>
+
+<details>
+<summary><b>本地上传支持哪些格式？大小有限制吗？</b></summary>
+
+允许的扩展名：`.txt`、`.mp3`、`.mp4`、`.m4a`、`.wav`、`.webm`、`.mkv`、`.ogg`、`.flac`。默认单文件上限 **200 MB**，可通过 `UPLOAD_MAX_MB` 调整。
+
+</details>
+
+<details>
+<summary><b>AI 优化功能不可用怎么办？</b></summary>
+
+AI 功能需要任意 OpenAI 兼容服务商的 API Key。可直接在页面 **AI Settings** 面板中填写（无需重启），也可通过 `OPENAI_API_KEY` 设置服务端默认值。没有 Key 时转录仍然可用（Whisper 在本地运行），但优化、翻译和摘要会退化为基础排版。
+
+</details>
+
+<details>
+<summary><b>出现 500 报错/白屏，是代码问题吗？</b></summary>
+
+多数情况下是环境配置问题，请按以下清单排查：
+
+- 是否已激活虚拟环境：`source venv/bin/activate`
+- 依赖是否装在虚拟环境中：`pip install -r requirements.txt`
+- 是否在 **AI Settings** 面板配置了 API Key，或设置了 `OPENAI_API_KEY`
+- 是否已安装 FFmpeg：macOS `brew install ffmpeg` / Debian/Ubuntu `sudo apt install ffmpeg`
+- 8000 端口是否被占用，或改用其他 `PORT`
+
+</details>
+
+<details>
+<summary><b>如何使用 Docker 部署？</b></summary>
+
+**前置条件**：从 https://www.docker.com/products/docker-desktop/ 安装 Docker Desktop，并确保服务正在运行。
+
+```bash
 git clone https://github.com/wendy7756/AI-Video-Transcriber.git
 cd AI-Video-Transcriber
-cp .env.example .env
-# 编辑.env文件设置服务端默认值（可选）
+cp .env.example .env      # 编辑以设置服务端默认值（可选）
 
-# 使用Docker Compose启动（推荐）
-docker-compose up -d
+docker-compose up -d      # 推荐
 
 # 或手动构建运行
 docker build -t ai-video-transcriber .
 docker run -p 8000:8000 --env-file .env ai-video-transcriber
 ```
 
-**常见Docker问题：**
-- **端口冲突**：如果8000端口被占用，可改用 `-p 8001:8000`
-- **权限拒绝**：确保Docker Desktop正在运行且有适当权限
-- **构建失败**：检查磁盘空间（需要约2GB空闲空间）和网络连接
-- **容器无法启动**：通过 `docker logs <容器ID>` 查看具体错误日志
+**常见问题**
 
-**Docker常用命令：**
+- **端口冲突** —— 改用 `-p 8001:8000`
+- **权限拒绝** —— 确认 Docker Desktop 正在运行
+- **构建失败** —— 检查磁盘空间（需约 2 GB 空闲）和网络连接
+- **容器无法启动** —— 通过 `docker logs <容器ID>` 查看日志
+
+**常用命令**
+
 ```bash
-# 查看运行中的容器
-docker ps
-
-# 检查容器日志
-docker logs ai-video-transcriber-ai-video-transcriber-1
-
-# 停止服务
-docker-compose down
-
-# 修改后重新构建
-docker-compose build --no-cache
+docker ps                                                    # 查看运行中的容器
+docker logs ai-video-transcriber-ai-video-transcriber-1      # 查看日志
+docker-compose down                                          # 停止服务
+docker-compose build --no-cache                              # 修改后重新构建
 ```
 
-### Q: 内存需求是多少？
-A: 内存使用量根据部署方式和工作负载而有所不同：
+</details>
 
-**Docker部署：**
-- **基础内存**：空闲容器约128MB
-- **处理过程中**：根据视频长度和Whisper模型，需要500MB - 2GB
-- **Docker镜像大小**：约1.6GB磁盘空间
-- **推荐配置**：4GB+内存以确保流畅运行
+<details>
+<summary><b>内存需求是多少？</b></summary>
 
-**传统部署：**
-- **基础内存**：FastAPI服务器约50-100MB
-- **Whisper模型内存占用**：
-  - `tiny`：约150MB
-  - `base`：约250MB
-  - `small`：约750MB
-  - `medium`：约1.5GB
-  - `large`：约3GB
-- **峰值使用**：基础 + 模型 + 视频处理（额外约500MB）
+**Docker 部署**：空闲约 128 MB，处理中 500 MB–2 GB，镜像约 1.6 GB。推荐 4 GB+ 内存。
 
-**内存优化建议：**
+**传统部署**：FastAPI 服务约 50–100 MB，加上 Whisper 模型（见上表），再加处理过程峰值约 500 MB。
+
 ```bash
-# 使用更小的Whisper模型减少内存占用
-WHISPER_MODEL_SIZE=tiny  # 或 base
+# 减少内存占用
+WHISPER_MODEL_SIZE=tiny
 
-# Docker部署时可限制容器内存
+# 限制容器内存
 docker run -m 1g -p 8000:8000 --env-file .env ai-video-transcriber
 
-# 监控内存使用情况
+# 监控
 docker stats ai-video-transcriber-ai-video-transcriber-1
 ```
 
-### Q: 网络连接错误或超时怎么办？
-A: 如果在视频下载或API调用过程中遇到网络相关错误，请尝试以下解决方案：
+</details>
 
-**常见网络问题：**
-- 视频下载失败，出现"无法提取"或超时错误
-- OpenAI API调用返回连接超时或DNS解析失败
-- Docker镜像拉取失败或极其缓慢
+<details>
+<summary><b>网络连接错误或超时怎么办？</b></summary>
 
-**解决方案：**
-1. **切换VPN/代理**：尝试连接到不同的VPN服务器或更换代理设置
-2. **检查网络稳定性**：确保你的网络连接稳定
-3. **更换网络后重试**：更改网络设置后等待30-60秒再重试
-4. **使用备用端点**：如果使用自定义OpenAI端点，验证它们在你的网络环境下可访问
-5. **Docker网络问题**：如果容器网络失败，重启Docker Desktop
+典型表现：下载时提示「无法提取」或超时、API 连接超时/DNS 解析失败、Docker 拉取极慢。
 
-**快速网络测试：**
+1. **切换 VPN/代理** 到其他服务器
+2. **检查网络稳定性**
+3. 更改网络设置后**等待 30–60 秒**再重试
+4. **验证自定义端点**在当前网络下可访问
+5. 容器网络失败时**重启 Docker Desktop**
+
 ```bash
-# 测试视频平台访问
-curl -I https://www.youtube.com/
-
-# 测试AI服务商端点
-curl -I https://openrouter.ai
-
-# 测试Docker Hub访问
-docker pull hello-world
+curl -I https://www.youtube.com/     # 平台访问
+curl -I https://openrouter.ai        # AI 服务商
+docker pull hello-world              # Docker Hub
 ```
 
-如果问题持续存在，尝试切换到不同的网络或VPN位置。
+</details>
+
+<a id="languages"></a>
 
 ## 🎯 支持的语言
 
-### 转录
-- 通过Whisper支持100+种语言
-- 自动语言检测
-- 主要语言具有高准确率
+**转录** —— 通过 Whisper 支持 100+ 种语言，自动检测语言。
 
-### 摘要生成
-- 英语
-- 中文（简体）
-- 日语
-- 韩语
-- 西班牙语
-- 法语
-- 德语
-- 葡萄牙语
-- 俄语
-- 阿拉伯语
-- 以及更多...
+**摘要与翻译** —— 英语、中文（简体）、日语、韩语、西班牙语、法语、德语、意大利语、葡萄牙语、俄语、阿拉伯语。
+
+**界面** —— 中文与英文，可在右上角切换。
+
+<a id="performance"></a>
 
 ## 📈 性能提示
 
-- **硬件要求**:
-  - 最低配置: 4GB内存，双核CPU
-  - 推荐配置: 8GB内存，四核CPU
-  - 理想配置: 16GB内存，多核CPU，SSD存储
+**硬件要求**
 
-- **处理时间预估**:
+- 最低配置：4 GB 内存，双核 CPU
+- 推荐配置：8 GB 内存，四核 CPU
+- 理想配置：16 GB 内存，多核 CPU，SSD 存储
 
-  | 视频长度 | 字幕模式 | Whisper模式 | 备注 |
-  |---------|---------|------------|------|
-  | 1分钟 | ≈5秒 | 30秒–1分钟 | 字幕模式无需下载音频 |
-  | 5分钟 | ≈10秒 | 2–5分钟 | YouTube自动字幕触发字幕模式 |
-  | 15分钟 | ≈15秒 | 5–15分钟 | 大多数YouTube视频支持字幕模式 |
-  | 30分钟+ | ≈20秒 | 15–60分钟 | 纯音频/播客始终使用Whisper |
+**处理时间预估**
+
+| 视频长度 | 字幕模式 | Whisper 模式 | 备注 |
+|---------|---------|-------------|------|
+| 1 分钟 | ≈5 秒 | 30 秒–1 分钟 | 字幕模式无需下载音频 |
+| 5 分钟 | ≈10 秒 | 2–5 分钟 | YouTube 自动字幕会触发字幕模式 |
+| 15 分钟 | ≈15 秒 | 5–15 分钟 | 大多数 YouTube 视频支持字幕模式 |
+| 30 分钟+ | ≈20 秒 | 15–60 分钟 | 纯音频/播客始终使用 Whisper |
+
+以上数据基于**关闭**「保留原视频」。开启后，字幕模式任务的耗时主要取决于视频下载而非转录；由于下载与 AI 步骤重叠，实际增加的总时长通常明显小于下载本身所需的时间。
+
+<a id="contributing"></a>
 
 ## 🤝 贡献指南
 
-欢迎提交Issue和Pull Request！
+欢迎提交 Issue 和 Pull Request！
 
-1. Fork项目
-2. 创建功能分支 (`git checkout -b feature/AmazingFeature`)
-3. 提交更改 (`git commit -m 'Add some AmazingFeature'`)
-4. 推送到分支 (`git push origin feature/AmazingFeature`)
-5. 开启Pull Request 
+1. Fork 项目
+2. 创建功能分支（`git checkout -b feature/AmazingFeature`）
+3. 提交更改（`git commit -m 'Add some AmazingFeature'`）
+4. 推送到分支（`git push origin feature/AmazingFeature`）
+5. 开启 Pull Request
 
 ## 致谢
 
-- [yt-dlp](https://github.com/yt-dlp/yt-dlp) - 强大的视频下载工具
-- [Faster-Whisper](https://github.com/guillaumekln/faster-whisper) - 高效的Whisper实现
-- [FastAPI](https://fastapi.tiangolo.com/) - 现代化的Python Web框架
-- [OpenAI](https://openai.com/) - 智能文本处理API
+- [yt-dlp](https://github.com/yt-dlp/yt-dlp) —— 强大的视频下载工具
+- [Faster-Whisper](https://github.com/guillaumekln/faster-whisper) —— 高效的 Whisper 实现
+- [FastAPI](https://fastapi.tiangolo.com/) —— 现代化的 Python Web 框架
+- [OpenAI](https://openai.com/) —— 智能文本处理 API
 
 ## 📞 联系方式
 
-如有问题或建议，请提交Issue或联系Wendy。
+如有问题或建议，请提交 Issue 或联系 Wendy。
 
 ---
 
@@ -395,7 +493,8 @@ docker pull hello-world
 本工具是 **[sipsip.ai](https://sipsip.ai)** 的开源部分。
 
 完整产品提供更多功能：
-- 📧 **每日邮件简报** —— 关注你喜欢的创作者，每天早上收到AI整理的内容摘要
+
+- 📧 **每日邮件简报** —— 关注你喜欢的创作者，每天早上收到 AI 整理的内容摘要
 - ⚡ 随时转录和总结任意视频和播客
 - 🌐 全功能支持多语言
 
@@ -405,6 +504,4 @@ docker pull hello-world
 
 ---
 
-## ⭐ Star History
-
-如果您觉得这个项目有帮助，请考虑给它一个星星！
+⭐ 如果你觉得这个项目有帮助，请考虑给它一个 Star！

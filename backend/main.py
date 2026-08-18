@@ -108,6 +108,58 @@ sse_connections = {}
 UPLOAD_ALLOWED_EXT = frozenset({".txt", ".mp3", ".mp4", ".m4a", ".wav", ".webm", ".mkv", ".ogg", ".flac"})
 UPLOAD_MAX_MB = int(os.getenv("UPLOAD_MAX_MB", "200"))
 
+# 原视频下载：清晰度上限，避免 4K 源拖慢任务并占满磁盘
+VIDEO_MAX_HEIGHT = int(os.getenv("VIDEO_MAX_HEIGHT", "720"))
+
+# 可通过 /api/media 与 /api/download 提供的媒体类型
+MEDIA_MIME = {
+    ".mp4":  "video/mp4",
+    ".mkv":  "video/x-matroska",
+    ".webm": "video/webm",
+    ".mov":  "video/quicktime",
+    ".flv":  "video/x-flv",
+    ".m4a":  "audio/mp4",
+    ".mp3":  "audio/mpeg",
+    ".wav":  "audio/wav",
+    ".ogg":  "audio/ogg",
+    ".flac": "audio/flac",
+}
+VIDEO_EXT = frozenset({".mp4", ".mkv", ".webm", ".mov", ".flv"})
+
+
+def _media_kind(ext: str) -> str:
+    """按扩展名判断前端该渲染 <video> 还是 <audio>。"""
+    return "video" if ext.lower() in VIDEO_EXT else "audio"
+
+
+def _resolve_temp_file(filename: str, allowed_ext: frozenset) -> Path:
+    """校验前端传入的文件名并解析为 temp 目录下的真实路径。"""
+    if "/" in filename or "\\" in filename or ".." in filename:
+        raise HTTPException(status_code=400, detail="文件名格式无效")
+
+    ext = Path(filename).suffix.lower()
+    if ext not in allowed_ext:
+        raise HTTPException(status_code=400, detail=f"不支持的文件类型: {ext or '(none)'}")
+
+    file_path = TEMP_DIR / filename
+    # 二次防御：即使扩展名校验通过，也确认最终路径没跳出 temp
+    if file_path.parent.resolve() != TEMP_DIR.resolve():
+        raise HTTPException(status_code=400, detail="文件名格式无效")
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="文件不存在")
+    return file_path
+
+
+def _safe_download_name(raw: str, expected_ext: str) -> Optional[str]:
+    """把前端建议的下载文件名清洗为安全值，扩展名强制与磁盘文件一致。"""
+    if not raw:
+        return None
+    base = os.path.basename(raw.replace("\\", "/"))
+    stem = _sanitize_title_for_filename(Path(base).stem)
+    if not stem or stem == "untitled":
+        return None
+    return f"{stem}{expected_ext}"
+
 
 def _sanitize_title_for_filename(title: str) -> str:
     """将视频标题清洗为安全的文件名片段。"""
@@ -119,6 +171,31 @@ def _sanitize_title_for_filename(title: str) -> str:
     safe = re.sub(r"\s+", "_", safe).strip("._-")
     # 最长限制，避免过长文件名问题
     return safe[:80] or "untitled"
+
+
+def _transcribed_speech(raw_script: str) -> str:
+    """
+    取出转录结果里真正的语音文字（去掉标题、语言元信息、时间戳、source 行）。
+
+    返回空字符串表示这条视频没有可用语音。这个判断很重要：把空文稿丢给 LLM
+    会让它对着空输入凭空编造出一整段对话，然后翻译和摘要再把这段虚构内容
+    一路传下去，用户看到的就是完全不存在于视频里的“转录”。
+    """
+    if not raw_script:
+        return ""
+
+    marker = "## Transcription Content"
+    idx = raw_script.find(marker)
+    body = raw_script[idx + len(marker):] if idx >= 0 else raw_script
+
+    # 时间戳标记（**[00:00 - 00:03]**）本身不算语音内容
+    body = re.sub(r"\*\*\[[^\]]*\]\*\*", " ", body)
+    # 元信息与来源行
+    body = re.sub(r"^\s*(\*\*(Detected Language|Language Probability)\*\*.*|source:.*|#.*)$", " ", body, flags=re.M)
+    # 纯文本上传为空时的占位符
+    body = body.replace("(empty)", " ")
+
+    return body.strip()
 
 
 def _txt_to_raw_transcript_markdown(body: str) -> str:
@@ -136,6 +213,60 @@ def _txt_to_raw_transcript_markdown(body: str) -> str:
     ])
 
 
+async def _resolve_media(
+    task_id: str,
+    safe_title: str,
+    media_task: Optional[asyncio.Task],
+    media_filename: Optional[str],
+    media_download_name: Optional[str],
+) -> tuple[Optional[str], Optional[str]]:
+    """
+    收尾等待并行进行的原视频下载，返回 (media_filename, media_download_name)。
+
+    重复 await 同一个已完成的 Task 是安全的（直接返回缓存结果），因此慢速路径
+    提前 await 过也不影响这里再次等待。
+    """
+    if media_task is None:
+        return media_filename, media_download_name
+
+    if not media_task.done():
+        tasks[task_id].update({"progress": 92, "message": "正在准备原视频..."})
+        save_tasks(tasks)
+        await broadcast_task_update(task_id, tasks[task_id])
+
+    try:
+        video_path, _ = await media_task
+    except Exception as e:
+        logger.warning(f"等待原视频下载失败: {e}")
+        video_path = None
+
+    if video_path:
+        return Path(video_path).name, f"{safe_title}{Path(video_path).suffix}"
+    return media_filename, media_download_name
+
+
+def _media_result_fields(
+    media_filename: Optional[str],
+    media_download_name: Optional[str],
+) -> dict:
+    """把媒体文件信息整理成写入任务结果的字段；文件不存在时返回空 dict。"""
+    if not media_filename:
+        return {}
+
+    media_path = TEMP_DIR / media_filename
+    if not media_path.exists():
+        logger.warning(f"媒体文件不存在，跳过原视频展示: {media_filename}")
+        return {}
+
+    return {
+        "media_filename": media_filename,
+        "media_download_name": media_download_name or media_filename,
+        "media_kind": _media_kind(media_path.suffix.lower()),
+        # 传字节数，由前端决定用 KB/MB/GB 展示
+        "media_size_bytes": media_path.stat().st_size,
+    }
+
+
 async def _run_post_extract_pipeline(
     task_id: str,
     raw_script: str,
@@ -147,8 +278,15 @@ async def _run_post_extract_pipeline(
     api_key: str = "",
     model_base_url: str = "",
     model_id: str = "",
+    media_task: Optional[asyncio.Task] = None,
+    media_filename: Optional[str] = None,
+    media_download_name: Optional[str] = None,
 ) -> None:
-    """取得 raw_script 后的共用管线：归档、优化、翻译、摘要、广播。"""
+    """取得 raw_script 后的共用管线：归档、优化、翻译、摘要、附带原视频、广播。
+
+    media_task: 并行进行中的原视频下载任务，会在收尾前 await（可能已完成）。
+    media_filename / media_download_name: 已就位的媒体文件（如本地上传的原件）。
+    """
     short_id = task_id.replace("-", "")[:6]
     safe_title = _sanitize_title_for_filename(video_title)
 
@@ -162,6 +300,50 @@ async def _run_post_extract_pipeline(
         await broadcast_task_update(task_id, tasks[task_id])
     except Exception as e:
         logger.error(f"保存原始转录Markdown失败: {e}")
+
+    # ── 无语音短路 ────────────────────────────────────────────────────
+    # 视频里没有人说话时，绝不能把空文稿交给 LLM：模型会编造出一整段与视频
+    # 毫无关系的对话，再经翻译、摘要放大，用户完全无法分辨真假。
+    if not _transcribed_speech(raw_script):
+        logger.warning(f"任务 {task_id} 未检测到任何语音，跳过优化/翻译/摘要以避免 LLM 编造内容")
+
+        media_filename, media_download_name = await _resolve_media(
+            task_id, safe_title, media_task, media_filename, media_download_name
+        )
+
+        detected_language = (transcriber.get_detected_language(raw_script) or "").strip()
+        notice = "_No speech detected in this video — transcript, summary and translation are unavailable._"
+        script_with_title = f"# {video_title}\n\n{notice}\n\nsource: {source_ref}\n"
+
+        script_filename = f"transcript_{safe_title}_{short_id}.md"
+        async with aiofiles.open(TEMP_DIR / script_filename, "w", encoding="utf-8") as f:
+            await f.write(script_with_title)
+
+        task_result = {
+            "status": "completed",
+            "progress": 100,
+            "message": "未检测到语音内容",
+            "no_speech": True,
+            "video_title": video_title,
+            "script": script_with_title,
+            "summary": "",
+            "script_path": str(TEMP_DIR / script_filename),
+            "short_id": short_id,
+            "safe_title": safe_title,
+            "detected_language": detected_language,
+            "summary_language": summary_language,
+        }
+        task_result.update(_media_result_fields(media_filename, media_download_name))
+
+        tasks[task_id].update(task_result)
+        save_tasks(tasks)
+        await broadcast_task_update(task_id, tasks[task_id])
+
+        if dedup_url:
+            processing_urls.discard(dedup_url)
+        if task_id in active_tasks:
+            del active_tasks[task_id]
+        return
 
     tasks[task_id].update({
         "progress": 55,
@@ -253,6 +435,11 @@ async def _run_post_extract_pipeline(
     async with aiofiles.open(summary_path, "w", encoding="utf-8") as f:
         await f.write(summary_with_source)
 
+    # 下载与转录/摘要并行跑，到这里通常已经完成
+    media_filename, media_download_name = await _resolve_media(
+        task_id, safe_title, media_task, media_filename, media_download_name
+    )
+
     task_result = {
         "status": "completed",
         "progress": 100,
@@ -274,6 +461,8 @@ async def _run_post_extract_pipeline(
             "translation_path": str(translation_path),
             "translation_filename": translation_filename,
         })
+
+    task_result.update(_media_result_fields(media_filename, media_download_name))
 
     tasks[task_id].update(task_result)
     save_tasks(tasks)
@@ -403,12 +592,14 @@ async def process_video(
     api_key: str = Form(default=""),
     model_base_url: str = Form(default=""),
     model_id: str = Form(default=""),
+    download_video: str = Form(default="1"),
     file: Optional[UploadFile] = File(None),
 ):
     """
     处理视频链接或本地上传（multipart 中带 file 且无有效 URL 时走上传流程）。
     上传与 URL 共用此路径，便于反向代理只放行 /api/process-video 的环境。
     """
+    want_video = str(download_video).strip().lower() not in ("0", "false", "no", "off", "")
     try:
         if file is not None and (file.filename or "").strip():
             return await _enqueue_upload_job(
@@ -450,7 +641,11 @@ async def process_video(
         save_tasks(tasks)
         
         # 创建并跟踪异步任务
-        task = asyncio.create_task(process_video_task(task_id, url, summary_language, api_key, model_base_url, model_id))
+        task = asyncio.create_task(
+            process_video_task(
+                task_id, url, summary_language, api_key, model_base_url, model_id, want_video
+            )
+        )
         active_tasks[task_id] = task
         
         return {"task_id": task_id, "message": "任务已创建，正在处理中..."}
@@ -468,10 +663,12 @@ async def process_video_task(
     api_key: str = "",
     model_base_url: str = "",
     model_id: str = "",
+    want_video: bool = True,
 ):
     """
     异步处理视频任务
     """
+    media_task = None
     try:
         # ── 阶段一：优先尝试获取平台字幕（快速路径） ──────────────────────
         tasks[task_id].update({
@@ -482,6 +679,17 @@ async def process_video_task(
         save_tasks(tasks)
         await broadcast_task_update(task_id, tasks[task_id])
         await asyncio.sleep(0.1)
+
+        # 原视频下载与字幕/转录/摘要并行，收尾时才等它，尽量不增加总耗时
+        if want_video:
+            media_task = asyncio.create_task(
+                video_processor.download_video(
+                    url,
+                    TEMP_DIR,
+                    f"video_{task_id.replace('-', '')[:12]}",
+                    VIDEO_MAX_HEIGHT,
+                )
+            )
 
         # 如果前端传入了 API 凭据，创建专用 Summarizer（线程安全，覆盖全局实例）
         if api_key:
@@ -519,9 +727,27 @@ async def process_video_task(
             save_tasks(tasks)
             await broadcast_task_update(task_id, tasks[task_id])
 
-            audio_path, video_title = await video_processor.download_and_convert(
-                url, TEMP_DIR, prefetched_title=sub_title or None
-            )
+            audio_path = None
+            video_title = None
+
+            # 已经在下载原视频时，直接从它抽音轨，避免把同一个视频下载两遍
+            if media_task is not None:
+                video_path, media_title = await media_task
+                if video_path:
+                    try:
+                        audio_path = await video_processor.normalize_local_media_to_m4a(
+                            Path(video_path), TEMP_DIR
+                        )
+                        video_title = media_title or sub_title or "unknown"
+                        logger.info("复用原视频抽取音轨，跳过独立音频下载")
+                    except Exception as e:
+                        logger.warning(f"从原视频抽音轨失败，回退独立音频下载: {e}")
+                        audio_path = None
+
+            if audio_path is None:
+                audio_path, video_title = await video_processor.download_and_convert(
+                    url, TEMP_DIR, prefetched_title=sub_title or None
+                )
 
             tasks[task_id].update({
                 "progress": 35,
@@ -550,6 +776,7 @@ async def process_video_task(
             api_key=api_key,
             model_base_url=model_base_url,
             model_id=model_id,
+            media_task=media_task,
         )
 
         # 不要立即删除临时文件！保留给用户下载
@@ -557,6 +784,9 @@ async def process_video_task(
 
     except Exception as e:
         logger.error(f"任务 {task_id} 处理失败: {str(e)}")
+        # 主流程已失败，不要让原视频下载在后台继续跑
+        if media_task is not None and not media_task.done():
+            media_task.cancel()
         # 从处理列表中移除URL
         processing_urls.discard(url)
         
@@ -651,6 +881,9 @@ async def process_upload_task(
 
             raw_script = await transcriber.transcribe(audio_path)
 
+        # 上传的原件本身就是「原视频」，无需再下载，直接挂到结果上
+        is_media_upload = ext_lower != ".txt"
+
         await _run_post_extract_pipeline(
             task_id=task_id,
             raw_script=raw_script,
@@ -662,6 +895,8 @@ async def process_upload_task(
             api_key=api_key,
             model_base_url=model_base_url,
             model_id=model_id,
+            media_filename=saved_path.name if is_media_upload else None,
+            media_download_name=original_name if is_media_upload else None,
         )
 
     except Exception as e:
@@ -748,34 +983,54 @@ async def task_stream(task_id: str):
         }
     )
 
+DOWNLOAD_ALLOWED_EXT = frozenset({".md"}) | frozenset(MEDIA_MIME)
+
+
 @app.get("/api/download/{filename}")
-async def download_file(filename: str):
+async def download_file(filename: str, name: str = ""):
     """
-    直接从temp目录下载文件（简化方案）
+    直接从temp目录下载文件（转录 .md 与原视频/音频）。
+
+    name: 可选，前端建议的展示文件名（会被清洗，扩展名强制与实际文件一致）。
     """
     try:
-        # 检查文件扩展名安全性
-        if not filename.endswith('.md'):
-            raise HTTPException(status_code=400, detail="仅支持下载.md文件")
-        
-        # 检查文件名格式（防止路径遍历攻击）
-        if '..' in filename or '/' in filename or '\\' in filename:
-            raise HTTPException(status_code=400, detail="文件名格式无效")
-            
-        file_path = TEMP_DIR / filename
-        if not file_path.exists():
-            raise HTTPException(status_code=404, detail="文件不存在")
-            
+        file_path = _resolve_temp_file(filename, DOWNLOAD_ALLOWED_EXT)
+        ext = file_path.suffix.lower()
+        media_type = "text/markdown" if ext == ".md" else MEDIA_MIME[ext]
+        download_name = _safe_download_name(name, ext) or filename
+
         return FileResponse(
             file_path,
-            filename=filename,
-            media_type="text/markdown"
+            filename=download_name,
+            media_type=media_type,
         )
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"下载文件失败: {e}")
         raise HTTPException(status_code=500, detail=f"下载失败: {str(e)}")
+
+
+@app.get("/api/media/{filename}")
+async def stream_media(filename: str):
+    """
+    内联播放原视频/音频，供结果页的 <video>/<audio> 直接引用。
+
+    不设置 Content-Disposition，浏览器才会内联播放而不是触发下载；
+    FileResponse 本身支持 Range 请求，所以进度条可以拖动。
+    """
+    try:
+        file_path = _resolve_temp_file(filename, frozenset(MEDIA_MIME))
+        return FileResponse(
+            file_path,
+            media_type=MEDIA_MIME[file_path.suffix.lower()],
+            headers={"Accept-Ranges": "bytes", "Cache-Control": "private, max-age=3600"},
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"读取媒体文件失败: {e}")
+        raise HTTPException(status_code=500, detail=f"读取失败: {str(e)}")
 
 
 @app.delete("/api/task/{task_id}")

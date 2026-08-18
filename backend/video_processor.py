@@ -58,6 +58,65 @@ class VideoProcessor:
         await asyncio.to_thread(_run)
         return str(out_path)
     
+    async def download_video(
+        self,
+        url: str,
+        output_dir: Path,
+        stem: str,
+        max_height: int = 720,
+    ) -> tuple[Optional[str], Optional[str]]:
+        """
+        下载带画面的原始视频，用于结果页预览与「下载原视频」。
+
+        与 download_and_convert 的区别：不抽取音轨，保留视频流并合并为 mp4。
+        stem 由调用方给定（不含扩展名），便于任务侧定位产物。
+
+        Returns:
+            (video_path, video_title)；任何失败都返回 (None, None)，
+            视频只是附加产物，不应让它的失败影响转录主流程。
+        """
+        try:
+            output_dir.mkdir(exist_ok=True)
+
+            # height<=? 是 yt-dlp 的「软条件」：没有符合的清晰度时不会直接失败
+            fmt = (
+                f"bestvideo[height<=?{max_height}][ext=mp4]+bestaudio[ext=m4a]/"
+                f"bestvideo[height<=?{max_height}]+bestaudio/"
+                f"best[height<=?{max_height}]/best"
+            )
+            ydl_opts = {
+                'format': fmt,
+                'merge_output_format': 'mp4',
+                'outtmpl': str(output_dir / f"{stem}.%(ext)s"),
+                # faststart 让 moov 前置，浏览器无需下载完整文件即可起播
+                'postprocessor_args': ['-movflags', '+faststart'],
+                'prefer_ffmpeg': True,
+                'quiet': True,
+                'no_warnings': True,
+                'noplaylist': True,
+            }
+
+            logger.info(f"开始下载原视频（≤{max_height}p）: {url}")
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info = await asyncio.to_thread(ydl.extract_info, url, True)
+
+            video_title = (info or {}).get('title') or 'unknown'
+
+            # 合并后的容器不一定是 mp4（单一流或无法重混流时会保留原容器）
+            for ext in ('mp4', 'mkv', 'webm', 'mov', 'flv'):
+                candidate = output_dir / f"{stem}.{ext}"
+                if candidate.exists():
+                    size_mb = candidate.stat().st_size / (1024 * 1024)
+                    logger.info(f"原视频已保存: {candidate} ({size_mb:.1f} MB)")
+                    return str(candidate), video_title
+
+            logger.warning("原视频下载完成但未找到输出文件")
+            return None, video_title
+
+        except Exception as e:
+            logger.warning(f"原视频下载失败（结果页将不展示视频）: {e}")
+            return None, None
+
     async def fetch_subtitles(self, url: str, output_dir: Path) -> tuple[Optional[str], Optional[str], Optional[str]]:
         """
         先尝试从平台获取字幕文本，比下载音频快得多。
