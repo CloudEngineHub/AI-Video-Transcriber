@@ -17,6 +17,16 @@ from video_processor import VideoProcessor
 from transcriber import Transcriber
 from summarizer import Summarizer
 from translator import Translator
+from pipeline import (
+    MEDIA_MIME,
+    NO_SPEECH_NOTICE,
+    UPLOAD_ALLOWED_EXT,
+    VIDEO_EXT,
+    media_kind as _media_kind,
+    sanitize_title_for_filename as _sanitize_title_for_filename,
+    transcribed_speech as _transcribed_speech,
+    txt_to_raw_transcript_markdown as _txt_to_raw_transcript_markdown,
+)
 
 # 配置日志
 logging.basicConfig(level=logging.INFO)
@@ -105,32 +115,10 @@ active_tasks = {}
 sse_connections = {}
 
 # 本地上传：允许的类型与大小上限（MB），可用环境变量 UPLOAD_MAX_MB 调整
-UPLOAD_ALLOWED_EXT = frozenset({".txt", ".mp3", ".mp4", ".m4a", ".wav", ".webm", ".mkv", ".ogg", ".flac"})
 UPLOAD_MAX_MB = int(os.getenv("UPLOAD_MAX_MB", "200"))
 
 # 原视频下载：清晰度上限，避免 4K 源拖慢任务并占满磁盘
 VIDEO_MAX_HEIGHT = int(os.getenv("VIDEO_MAX_HEIGHT", "720"))
-
-# 可通过 /api/media 与 /api/download 提供的媒体类型
-MEDIA_MIME = {
-    ".mp4":  "video/mp4",
-    ".mkv":  "video/x-matroska",
-    ".webm": "video/webm",
-    ".mov":  "video/quicktime",
-    ".flv":  "video/x-flv",
-    ".m4a":  "audio/mp4",
-    ".mp3":  "audio/mpeg",
-    ".wav":  "audio/wav",
-    ".ogg":  "audio/ogg",
-    ".flac": "audio/flac",
-}
-VIDEO_EXT = frozenset({".mp4", ".mkv", ".webm", ".mov", ".flv"})
-
-
-def _media_kind(ext: str) -> str:
-    """按扩展名判断前端该渲染 <video> 还是 <audio>。"""
-    return "video" if ext.lower() in VIDEO_EXT else "audio"
-
 
 def _resolve_temp_file(filename: str, allowed_ext: frozenset) -> Path:
     """校验前端传入的文件名并解析为 temp 目录下的真实路径。"""
@@ -159,58 +147,6 @@ def _safe_download_name(raw: str, expected_ext: str) -> Optional[str]:
     if not stem or stem == "untitled":
         return None
     return f"{stem}{expected_ext}"
-
-
-def _sanitize_title_for_filename(title: str) -> str:
-    """将视频标题清洗为安全的文件名片段。"""
-    if not title:
-        return "untitled"
-    # 仅保留字母数字、下划线、连字符与空格
-    safe = re.sub(r"[^\w\-\s]", "", title)
-    # 压缩空白并转为下划线
-    safe = re.sub(r"\s+", "_", safe).strip("._-")
-    # 最长限制，避免过长文件名问题
-    return safe[:80] or "untitled"
-
-
-def _transcribed_speech(raw_script: str) -> str:
-    """
-    取出转录结果里真正的语音文字（去掉标题、语言元信息、时间戳、source 行）。
-
-    返回空字符串表示这条视频没有可用语音。这个判断很重要：把空文稿丢给 LLM
-    会让它对着空输入凭空编造出一整段对话，然后翻译和摘要再把这段虚构内容
-    一路传下去，用户看到的就是完全不存在于视频里的“转录”。
-    """
-    if not raw_script:
-        return ""
-
-    marker = "## Transcription Content"
-    idx = raw_script.find(marker)
-    body = raw_script[idx + len(marker):] if idx >= 0 else raw_script
-
-    # 时间戳标记（**[00:00 - 00:03]**）本身不算语音内容
-    body = re.sub(r"\*\*\[[^\]]*\]\*\*", " ", body)
-    # 元信息与来源行
-    body = re.sub(r"^\s*(\*\*(Detected Language|Language Probability)\*\*.*|source:.*|#.*)$", " ", body, flags=re.M)
-    # 纯文本上传为空时的占位符
-    body = body.replace("(empty)", " ")
-
-    return body.strip()
-
-
-def _txt_to_raw_transcript_markdown(body: str) -> str:
-    """将纯文本包装为与 Whisper 输出结构一致的 Markdown。"""
-    text = body.strip() if body.strip() else "(empty)"
-    return "\n".join([
-        "# Video Transcription",
-        "",
-        "**Detected Language:**",
-        "**Language Probability:** —",
-        "",
-        "## Transcription Content",
-        "",
-        text,
-    ])
 
 
 async def _resolve_media(
@@ -312,7 +248,7 @@ async def _run_post_extract_pipeline(
         )
 
         detected_language = (transcriber.get_detected_language(raw_script) or "").strip()
-        notice = "_No speech detected in this video — transcript, summary and translation are unavailable._"
+        notice = NO_SPEECH_NOTICE
         script_with_title = f"# {video_title}\n\n{notice}\n\nsource: {source_ref}\n"
 
         script_filename = f"transcript_{safe_title}_{short_id}.md"

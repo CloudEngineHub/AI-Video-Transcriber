@@ -28,6 +28,7 @@ An AI-powered tool to transcribe, summarize, and archive videos and podcasts —
 
 - [Quick Start](#quick-start)
 - [Usage Guide](#usage-guide)
+- [Use It From Claude / Codex / Scripts](#agents)
 - [API Reference](#api-reference)
 - [Technical Architecture](#architecture)
 - [Configuration Options](#configuration)
@@ -176,6 +177,89 @@ For **local uploads**, media is normalized with FFmpeg then transcribed with Whi
 - Each tab has its own **purple download icon** — click it to save that file without switching tabs
 - **Download original video** sits at the right of the tab row, next to an inline player showing the source file and its size
 
+<a id="agents"></a>
+
+## 🤖 Use It From Claude / Codex / Scripts
+
+Besides the web UI there is a headless entry point, so agents and scripts can run the
+same pipeline with no server and no browser.
+
+### CLI
+
+```bash
+venv/bin/python transcribe.py "https://www.youtube.com/watch?v=VIDEO_ID" --json
+venv/bin/python transcribe.py talk.mp4 -l zh --no-video
+venv/bin/python transcribe.py notes.txt --no-llm          # no API key needed
+```
+
+`--json` puts a machine-readable result on stdout and keeps progress on stderr.
+Exit codes: `0` success, `2` bad input, `1` download/transcode failure.
+
+| Flag | Meaning |
+|------|---------|
+| `-l, --summary-language` | Summary language (`en`, `zh`, `es`, `fr`, `de`, `it`, `pt`, `ru`, `ja`, `ko`, `ar`) |
+| `--no-llm` | Transcript only — skips optimize/translate/summarize, needs no API key |
+| `--no-video` | Don't keep the original video |
+| `--whisper-model` | `tiny` … `large`, default `base` |
+| `-o, --output-dir` | Where to write the Markdown, default `./temp` |
+| `--json` / `-q` | Machine-readable output / silence progress |
+
+### Codex App plugin
+
+The repo also ships a skills-only Codex plugin:
+
+```text
+.codex-plugin/plugin.json
+skills/video-transcribe/SKILL.md
+```
+
+Install or refresh it from the Codex App plugin UI as a local plugin, then start a
+new task and select **AI Video Transcriber** from Plugins. Shipping the plugin files
+does not install the plugin automatically; after changing the plugin, refresh or
+reinstall it and start a new task so Codex reloads the skill. The skill wraps the
+same CLI pipeline above, so the machine running Codex still needs this repo's `venv`
+and `ffmpeg`.
+
+This plugin intentionally does not bundle the local stdio MCP server. If you want
+Codex to call the `transcribe_video` MCP tool directly, register the MCP server
+separately as shown below.
+
+### Claude Code skill
+
+The repo ships `.claude/skills/video-transcribe/SKILL.md`, so Claude Code picks it up
+automatically when you work in this directory — just ask it to transcribe a link. To
+use it from anywhere, copy the folder to `~/.claude/skills/`.
+
+### MCP server (Claude Code, Claude Desktop, Codex)
+
+The project includes an optional stdio MCP server. It is not registered
+automatically; add it once per client.
+
+```bash
+pip install "mcp>=2.0"
+
+# From the repository root:
+claude mcp add video-transcriber -- "$(pwd)/venv/bin/python" "$(pwd)/mcp_server.py"
+codex mcp add video-transcriber -- "$(pwd)/venv/bin/python" "$(pwd)/mcp_server.py"
+```
+
+If you prefer editing Codex config directly, add this to `~/.codex/config.toml`:
+
+```toml
+[mcp_servers.video-transcriber]
+command = "/abs/path/venv/bin/python"
+args = ["/abs/path/mcp_server.py"]
+```
+
+Exposes one tool, `transcribe_video`, returning the transcript, summary, optional
+translation, file paths, and a `no_speech` flag. Verify the wiring with
+`venv/bin/python mcp_server.py --selftest`, then check client registration with
+`claude mcp list` or `codex mcp list`.
+
+> **`no_speech` matters:** when the source has no speech, the pipeline skips the LLM
+> entirely and returns empty text. Agents should report that rather than guessing at
+> the content — feeding an empty transcript to an LLM produces confident fabrications.
+
 <a id="api-reference"></a>
 
 ## 🔌 API Reference
@@ -243,6 +327,7 @@ File ─→ normalize with FFmpeg ──→ Whisper ─────────�
 AI-Video-Transcriber/
 ├── backend/
 │   ├── main.py             # FastAPI app, routes, task orchestration
+│   ├── pipeline.py         # Pure helpers shared by web/CLI/MCP (incl. no-speech guard)
 │   ├── video_processor.py  # yt-dlp: subtitles, audio, original video
 │   ├── transcriber.py      # Faster-Whisper transcription
 │   ├── summarizer.py       # Transcript optimization + summary
@@ -257,7 +342,15 @@ AI-Video-Transcriber/
 ├── .env.example
 ├── requirements.txt
 ├── install.sh
-└── start.py                # Startup script (--prod disables hot reload)
+├── start.py                # Startup script (--prod disables hot reload)
+├── transcribe.py           # Headless CLI (agents, scripts, cron)
+├── mcp_server.py           # MCP server exposing the transcribe_video tool
+├── .codex-plugin/
+│   └── plugin.json         # Codex App plugin manifest
+├── skills/
+│   └── video-transcribe/   # Codex plugin skill wrapping the CLI
+└── .claude/skills/
+    └── video-transcribe/   # Claude Code skill wrapping the CLI
 ```
 
 <a id="configuration"></a>

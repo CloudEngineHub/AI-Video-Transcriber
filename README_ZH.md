@@ -28,6 +28,7 @@
 
 - [快速开始](#quick-start)
 - [使用指南](#usage-guide)
+- [在 Claude / Codex / 脚本中调用](#agents)
 - [接口说明](#api-reference)
 - [技术架构](#architecture)
 - [配置选项](#configuration)
@@ -176,6 +177,83 @@ python3 start.py --prod
 - 每个标签页右侧都有独立的**紫色下载图标**，不切换标签也能直接下载对应文件
 - **Download original video** 按钮位于标签栏右侧，下方是内嵌播放器，显示源文件及其大小
 
+<a id="agents"></a>
+
+## 🤖 在 Claude / Codex / 脚本中调用
+
+除了 Web 界面，项目还提供了无头入口，agent 和脚本可以在不启服务、不开浏览器的情况下
+跑同一套管线。
+
+### 命令行
+
+```bash
+venv/bin/python transcribe.py "https://www.youtube.com/watch?v=VIDEO_ID" --json
+venv/bin/python transcribe.py talk.mp4 -l zh --no-video
+venv/bin/python transcribe.py notes.txt --no-llm          # 无需 API Key
+```
+
+`--json` 会把机器可读结果打到 stdout，进度信息走 stderr。
+退出码：`0` 成功，`2` 输入不合法，`1` 下载/转码失败。
+
+| 参数 | 含义 |
+|------|------|
+| `-l, --summary-language` | 摘要语言（`en`、`zh`、`es`、`fr`、`de`、`it`、`pt`、`ru`、`ja`、`ko`、`ar`） |
+| `--no-llm` | 只输出转录文本，跳过优化/翻译/摘要，无需 API Key |
+| `--no-video` | 不保留原视频 |
+| `--whisper-model` | `tiny` … `large`，默认 `base` |
+| `-o, --output-dir` | Markdown 输出目录，默认 `./temp` |
+| `--json` / `-q` | 机器可读输出 / 静默进度 |
+
+### Codex App plugin
+
+仓库也内置了一个 skills-only Codex 插件：
+
+```text
+.codex-plugin/plugin.json
+skills/video-transcribe/SKILL.md
+```
+
+在 Codex App 的插件界面把它作为本地插件安装或刷新后，新建任务并从 Plugins 中选择
+**AI Video Transcriber** 即可。仓库带着插件文件不等于已经自动安装；修改插件后需要
+刷新或重新安装插件，并新开任务让 Codex 重新加载 skill。这个 skill 仍然包装上面的 CLI
+管线，所以运行 Codex 的机器仍需准备好本仓库的 `venv` 和 `ffmpeg`。
+
+这个插件暂不把本地 stdio MCP 服务打包进去。如果希望 Codex 直接调用
+`transcribe_video` MCP 工具，请按下面的方式单独注册 MCP server。
+
+### Claude Code skill
+
+仓库内置 `.claude/skills/video-transcribe/SKILL.md`，在本目录下使用 Claude Code 时会
+自动识别 —— 直接让它转录某个链接即可。想全局可用，把该目录复制到 `~/.claude/skills/`。
+
+### MCP 服务（Claude Code、Claude Desktop、Codex）
+
+项目内置的是可选的 stdio MCP server。它不会自动注册到各个客户端，需要每个客户端
+配置一次。
+
+```bash
+pip install "mcp>=2.0"
+
+# 在仓库根目录执行：
+claude mcp add video-transcriber -- "$(pwd)/venv/bin/python" "$(pwd)/mcp_server.py"
+codex mcp add video-transcriber -- "$(pwd)/venv/bin/python" "$(pwd)/mcp_server.py"
+```
+
+如果更喜欢手动编辑 Codex 配置，也可以写入 `~/.codex/config.toml`：
+
+```toml
+[mcp_servers.video-transcriber]
+command = "/abs/path/venv/bin/python"
+args = ["/abs/path/mcp_server.py"]
+```
+
+对外暴露一个工具 `transcribe_video`，返回转录、摘要、可选翻译、文件路径以及
+`no_speech` 标记。可用 `venv/bin/python mcp_server.py --selftest` 验证服务端是否正常，
+再用 `claude mcp list` 或 `codex mcp list` 检查客户端是否已经注册。
+
+> **注意 `no_speech`**：视频没有语音时，管线会完全跳过 LLM 并返回空文本。agent 应当
+> 如实告知用户，而不是去猜内容 —— 把空文稿交给 LLM 会得到一段自信的虚构内容。
+
 <a id="api-reference"></a>
 
 ## 🔌 接口说明
@@ -243,6 +321,7 @@ curl -X POST http://localhost:8000/api/process-video \
 AI-Video-Transcriber/
 ├── backend/
 │   ├── main.py             # FastAPI 应用、路由、任务编排
+│   ├── pipeline.py         # Web/CLI/MCP 共用的纯函数（含无语音判定）
 │   ├── video_processor.py  # yt-dlp：字幕、音频、原视频
 │   ├── transcriber.py      # Faster-Whisper 转录
 │   ├── summarizer.py       # 文稿优化 + 摘要
@@ -257,7 +336,15 @@ AI-Video-Transcriber/
 ├── .env.example
 ├── requirements.txt
 ├── install.sh
-└── start.py                # 启动脚本（--prod 禁用热重载）
+├── start.py                # 启动脚本（--prod 禁用热重载）
+├── transcribe.py           # 无头命令行入口（agent、脚本、定时任务）
+├── mcp_server.py           # MCP 服务，暴露 transcribe_video 工具
+├── .codex-plugin/
+│   └── plugin.json         # Codex App 插件清单
+├── skills/
+│   └── video-transcribe/   # 包装 CLI 的 Codex plugin skill
+└── .claude/skills/
+    └── video-transcribe/   # 包装 CLI 的 Claude Code skill
 ```
 
 <a id="configuration"></a>
