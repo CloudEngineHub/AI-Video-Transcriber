@@ -641,4 +641,11 @@ docker pull hello-world              # Docker Hub
 
 ---
 
+## 同一开发者的其他项目
+
+- 要录视频的话，可以用这个 [最好用的免费提词器](https://teleprompter.works)：直接在浏览器使用或者下载[app版本](https://apps.apple.com/app/teleprompter-scrolling-scripts/id6767148844)获得更好的使用体验。
+- 想在 Pinterest 上获得增长的话，可以用 [GetPinFast](https://getpin.fast)，帮产品拿到更多流量和转化。
+
+---
+
 ⭐ 如果你觉得这个项目有帮助，请考虑给它一个 Star！
